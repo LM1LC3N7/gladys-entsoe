@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-17
+
 ### Fixed
 
 - Status and Discovery republished after Gladys restarts.
@@ -40,5 +42,6 @@ the notes of the version's GitHub Release.
 - `THIRD_PARTY_NOTICES.md` crediting JaccoR/hass-entso-e (Apache-2.0),
   shipped in the image with `LICENSE`.
 
-[Unreleased]: https://github.com/LM1LC3N7/gladys-entsoe/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/LM1LC3N7/gladys-entsoe/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/LM1LC3N7/gladys-entsoe/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/LM1LC3N7/gladys-entsoe/releases/tag/v0.1.1
