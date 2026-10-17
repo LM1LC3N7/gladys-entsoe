@@ -43,7 +43,7 @@ export const T = {
     fr: `ENTSO-E ne publie aucun prix du lendemain pour ${zone} aujourd'hui : vérifiez la zone dans la configuration.`,
   }),
   ok: (zone, tomorrow) => ({
-    en: `Prices of ${zone} for today${tomorrow ? ' and tomorrow' : ' (tomorrow after 13:00 CET)'}.`,
+    en: `Prices of ${zone} for today${tomorrow ? ' and tomorrow' : ' (tomorrow after 13:00 Brussels time)'}.`,
     fr: `Prix de ${zone} pour aujourd'hui${tomorrow ? ' et demain' : ' (demain après 13 h, heure de Bruxelles)'}.`,
   }),
   report: ({ zone, current, avg, rank, tomorrow }) => ({
@@ -68,6 +68,10 @@ export function reasonOf(err) {
     unsupported: {
       en: 'the zone is not priced in EUR/MWh',
       fr: "la zone n'est pas cotée en EUR/MWh",
+    },
+    unusable: {
+      en: 'the answer holds no usable price',
+      fr: 'la réponse ne contient aucun prix utilisable',
     },
   };
   return (

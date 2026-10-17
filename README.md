@@ -23,25 +23,33 @@ Gladys ⇄ SDK ⇄ src/app.js (EntsoeApp)   readings schedule, pauses, quarter-h
                  └─ src/devices.js      the device, its features and states (pure)
 ```
 
-- **Request**: `GET https://web-api.tp.entsoe.eu/api?documentType=A44&in_Domain=<EIC>&out_Domain=<EIC>&periodStart=…&periodEnd=…&securityToken=…`,
+- **Request**: `GET https://web-api.tp.entsoe.eu/api?documentType=A44&in_Domain=<EIC>&out_Domain=<EIC>&contract_MarketAgreement.type=A01&periodStart=…&periodEnd=…&securityToken=…`,
   from the start of the local day to the end of tomorrow (UTC hours). The
   token is in the query string, as the platform requires: no URL is ever
   logged or put in a message.
 - **Answer**: `Publication_MarketDocument` with `TimeSeries` → `Period`
-  (`PT15M` or `PT60M`) → `Point` (`position`, `price.amount`). Missing
-  positions repeat the previous price up to the end of the period;
-  overlapping series keep classification sequence 1, then the finer
-  resolution; intraday (`A07`) or non-EUR/MWh series are skipped. An
-  `Acknowledgement_MarketDocument` with reason 999 means "no data yet".
+  (`PT15M` or `PT60M`) → `Point` (`position`, `price.amount`). In a curve
+  A03, missing positions repeat the previous price up to the end of the
+  period; in A01 (or without a curve type) they stay without price; other
+  curves are skipped. Overlapping series keep classification sequence 1,
+  then the finer resolution; intraday (`A07`) or non-EUR/MWh series are
+  skipped. An `Acknowledgement_MarketDocument` with reason 999 and "No
+  matching data" means "no data yet".
+- **Complete days**: judged on the part of a local day the market can have
+  published (up to the end of today's Brussels market day before 13:00, of
+  tomorrow's after), so a timezone west of Brussels does not read again
+  every hour.
 - **Schedule**: today and tomorrow at start; tomorrow from 13:00 Brussels
   time, then after 10, 20, 30 and every 60 minutes until published; next
   reading at 13:00 the day after. A tick every quarter hour publishes the
   states from memory (`publishChangedStates`, 30-minute heartbeat).
 - **Errors**: 429 → a pause of Retry-After within [1 min, 6 h] (10 min when
-  absent) that every path respects, kept across restarts and reconnections;
+  absent) that every path respects, kept across reconnections to Gladys
+  (not across a container restart);
   5xx / network → 5, 15, 30, then every 60 minutes; 400 or a zone not in
   EUR/MWh → every 6 hours; 401 → readings stop (no timer) until the token
-  changes or the "Read the prices now" button is pressed.
+  changes, the configuration is saved or the "Read the prices now" button
+  is pressed.
 
 ## Credits
 

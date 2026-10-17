@@ -4,10 +4,12 @@
 //
 // The parsing follows JaccoR/hass-entso-e (api_client.py, Apache-2.0):
 // periods of 15 or 60 minutes (PT15M / PT60M, the market moved to quarter
-// hours on 2025-10-01), a missing position repeats the previous price (curve
-// A03), the first series wins where two overlap (the DE-LU zone published a
-// 60-minute and a 15-minute series). Every instant is UTC: a 23- or 25-hour
-// day needs no special case.
+// hours on 2025-10-01), a missing position repeats the previous price only in
+// a curve A03 ("variable sized block"; in A01 or without a curve type a
+// missing position is no slot, any other curve type skips the series), the
+// first series wins where two overlap (the DE-LU zone published a 60-minute
+// and a 15-minute series). Every instant is UTC: a 23- or 25-hour day needs
+// no special case. Remote texts reach messages only sanitized (`clean`).
 // -----------------------------------------------------------------------------
 
 import {
@@ -40,6 +42,8 @@ export function requestUrl({ token, zone, start, end }) {
   url.searchParams.set('documentType', 'A44');
   url.searchParams.set('in_Domain', ZONES[zone].eic);
   url.searchParams.set('out_Domain', ZONES[zone].eic);
+  // Day-ahead contract only (A07 would be intraday), as entsoe-py asks.
+  url.searchParams.set('contract_MarketAgreement.type', 'A01');
   url.searchParams.set('periodStart', apiTime(Math.floor(start / hour) * hour));
   url.searchParams.set('periodEnd', apiTime(Math.ceil(end / hour) * hour));
   return url.toString();
@@ -48,6 +52,20 @@ export function requestUrl({ token, zone, start, end }) {
 const ISO_MINUTE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?Z$/;
 const DECIMAL = /^-?\d{1,9}(\.\d{1,9})?$/;
 const POSITION = /^\d{1,5}$/;
+const REASON_CODE = /^[A-Z0-9]{1,4}$/;
+
+/** A remote text fit for a message: no control character, 20 characters at most. */
+export function clean(value) {
+  let out = '';
+  for (const char of String(value ?? '')) {
+    const code = char.codePointAt(0);
+    if (code >= 0x20 && !(code >= 0x7f && code <= 0x9f)) {
+      out += char;
+      if (out.length >= 20) break;
+    }
+  }
+  return out.slice(0, 20);
+}
 
 function parseInstant(text) {
   if (!ISO_MINUTE.test(text)) {
@@ -91,7 +109,14 @@ export function parseDocument(text) {
           root = name;
         } else if (name === 'TimeSeries') {
           if (++seriesCount > MAX_SERIES) tooMany('series');
-          current = { sequence: 1, contract: '', currency: '', unit: '', periods: [] };
+          current = {
+            sequence: 1,
+            contract: '',
+            currency: '',
+            unit: '',
+            curve: '',
+            periods: [],
+          };
         } else if (name === 'Period' && current) {
           if (++periodCount > MAX_PERIODS) tooMany('periods');
           period = { start: undefined, end: undefined, resolution: '', points: [] };
@@ -102,7 +127,9 @@ export function parseDocument(text) {
       },
       onClose(name, value, parent) {
         if (root === 'Acknowledgement_MarketDocument') {
-          if (parent === 'Reason' && name === 'code') reason.code = value;
+          if (parent === 'Reason' && name === 'code') {
+            reason.code = REASON_CODE.test(value) ? value : '';
+          }
           if (parent === 'Reason' && name === 'text') reason.text = value.slice(0, 200);
           return;
         }
@@ -127,6 +154,7 @@ export function parseDocument(text) {
           } else if (name === 'contract_MarketAgreement.type') current.contract = value;
           else if (name === 'currency_Unit.name') current.currency = value;
           else if (name === 'price_Measure_Unit.name') current.unit = value;
+          else if (name === 'curveType') current.curve = value;
           else if (name === 'TimeSeries') {
             series.push(current);
             current = undefined;
@@ -141,11 +169,12 @@ export function parseDocument(text) {
     throw err;
   }
   if (root === 'Acknowledgement_MarketDocument') {
-    // 999: "No matching data found for Data item ... ", the usual answer for
-    // tomorrow before the auction results.
-    return reason.code === '999'
+    // 999 with "No matching data found for Data item ...": the usual answer
+    // for tomorrow before the auction results. 999 is also used for other
+    // refusals (too large a window, ...): those stay refusals.
+    return reason.code === '999' && /No matching data/i.test(reason.text)
       ? { kind: 'no_data' }
-      : { kind: 'refused', code: reason.code, reason: reason.text };
+      : { kind: 'refused', code: reason.code, reason: clean(reason.text) };
   }
   if (root !== 'Publication_MarketDocument') {
     throw new EntsoeError('invalid', 'ENTSO-E answered an unexpected document');
@@ -163,16 +192,20 @@ function slotsOf(series) {
   const candidates = series
     .filter((s) => {
       if (s.contract && s.contract !== 'A01') {
-        skipped.push(`contract ${s.contract}`);
+        skipped.push(`contract ${clean(s.contract)}`);
         return false;
       }
       if (s.currency !== 'EUR' || s.unit !== 'MWH') {
-        skipped.push(`unit ${s.currency || '?'}/${s.unit || '?'}`);
+        skipped.push(`unit ${clean(s.currency) || '?'}/${clean(s.unit) || '?'}`);
+        return false;
+      }
+      if (s.curve && s.curve !== 'A01' && s.curve !== 'A03') {
+        skipped.push(`curve ${clean(s.curve)}`);
         return false;
       }
       return true;
     })
-    .flatMap((s) => s.periods.map((p) => ({ sequence: s.sequence, ...p })))
+    .flatMap((s) => s.periods.map((p) => ({ sequence: s.sequence, fill: s.curve === 'A03', ...p })))
     .map((p) => ({ ...p, minutes: resolutionMinutes(p.resolution) }))
     .sort((a, b) => a.sequence - b.sequence || (a.minutes ?? 999) - (b.minutes ?? 999));
   for (const p of candidates) {
@@ -183,7 +216,7 @@ function slotsOf(series) {
     const from = periodSlots[0].start;
     const to = periodSlots.at(-1).end;
     if (accepted.some(([s, e]) => from < e && s < to)) {
-      skipped.push(`overlap ${p.resolution}`);
+      skipped.push(`overlap ${clean(p.resolution)}`);
       continue;
     }
     accepted.push([from, to]);
@@ -193,17 +226,20 @@ function slotsOf(series) {
   return { slots, skipped };
 }
 
-/** The slots of one Period, missing positions repeating the previous price. */
+/**
+ * The slots of one Period. In a curve A03 (`fill`) a missing position
+ * repeats the previous price; otherwise it is no slot.
+ */
 function expandPeriod(p, skipped) {
-  const { start, end, minutes } = p;
+  const { start, end, minutes, fill } = p;
   if (start === undefined || end === undefined || !minutes || end <= start) {
-    skipped.push(`period ${p.resolution || '?'}`);
+    skipped.push(`period ${clean(p.resolution) || '?'}`);
     return [];
   }
   const size = minutes * 60_000;
   const count = (end - start) / size;
   if (!Number.isInteger(count) || count > MAX_POINTS) {
-    skipped.push(`period length ${p.resolution}`);
+    skipped.push(`period length ${clean(p.resolution)}`);
     return [];
   }
   const prices = new Array(count + 1);
@@ -220,7 +256,12 @@ function expandPeriod(p, skipped) {
       skipped.push('price out of bounds');
       return [];
     }
-    if (position >= 1 && position <= count && prices[position] === undefined) {
+    if (position < 1 || position > count) {
+      // Outside its period: the document is not what it claims.
+      skipped.push('unreadable point');
+      return [];
+    }
+    if (prices[position] === undefined) {
       prices[position] = price;
     }
   }
@@ -229,6 +270,8 @@ function expandPeriod(p, skipped) {
   for (let position = 1; position <= count; position += 1) {
     if (prices[position] !== undefined) {
       last = prices[position];
+    } else if (!fill) {
+      last = undefined;
     }
     // Before the first point there is nothing to repeat: no slot.
     if (last !== undefined) {

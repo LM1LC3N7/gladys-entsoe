@@ -30,7 +30,15 @@ import { buildDevice, buildStates } from './devices.js';
 import { EntsoeError } from './http.js';
 import { fetchPrices } from './entsoe.js';
 import { T, reasonOf, withReason } from './i18n.js';
-import { addDays, dayOf, localDate, mergeSlots, snapshot, zonedTime } from './prices.js';
+import {
+  addDays,
+  dayOf,
+  localDate,
+  mergeSlots,
+  snapshot,
+  tomorrowFrom,
+  zonedTime,
+} from './prices.js';
 
 export const ACTION_TEST = 'test_connection';
 
@@ -72,8 +80,13 @@ export class EntsoeApp {
 
   // --- Lifecycle -------------------------------------------------------------
 
-  start(raw = {}) {
-    return this.serialize(() => this.doStart(raw));
+  /**
+   * (Re)start with a configuration. `userSaved`: the user saved the
+   * configuration (onConfigUpdated), which lifts a refused-token block once,
+   * even with the same token; a reconnection to Gladys keeps it.
+   */
+  start(raw = {}, { userSaved = false } = {}) {
+    return this.serialize(() => this.doStart(raw, { userSaved }));
   }
 
   stop() {
@@ -86,20 +99,28 @@ export class EntsoeApp {
     return run;
   }
 
-  async doStart(raw) {
+  async doStart(raw, { userSaved = false } = {}) {
     await this.doStop();
     const generation = this.generation;
     const previous = this.config;
     this.config = normalizeConfig(raw);
-    if (previous?.zone !== this.config.zone) {
+    const zoneChanged = previous?.zone !== this.config.zone;
+    const tokenChanged = previous?.token !== this.config.token;
+    if (zoneChanged) {
       this.slots = [];
       this.tomorrowStreak = 0;
     }
-    if (previous?.token !== this.config.token) {
+    if (tokenChanged) {
       this.errorStreak = 0;
       this.lastError = undefined;
     }
-    await this.publishDevices();
+    if (userSaved) {
+      this.refusedToken = undefined;
+    }
+    // A failed discovery must not stop the readings nor the tick.
+    await this.publishDevices().catch((err) =>
+      this.logger.warn(`Publishing the device failed: ${err.message}`),
+    );
     await this.tick();
     if (generation !== this.generation) {
       return;
@@ -110,6 +131,19 @@ export class EntsoeApp {
     }
     if (this.refusedToken === this.config.token) {
       await this.setStatus(false, T.refused);
+      return;
+    }
+    const now = this.now();
+    if (
+      this.lastError &&
+      !zoneChanged &&
+      !tokenChanged &&
+      !userSaved &&
+      this.nextFetchAt !== undefined &&
+      this.nextFetchAt > now
+    ) {
+      // A reconnection does not shortcut the backoff of a failed reading.
+      this.scheduleRead(this.nextFetchAt);
       return;
     }
     if (this.needsReading()) {
@@ -144,7 +178,8 @@ export class EntsoeApp {
   }
 
   async publishDevices() {
-    await this.gladys.publishDiscoveredDevices([buildDevice(this.gladys, this.config.zone)]);
+    const { zone } = this.config ?? normalizeConfig();
+    await this.gladys.publishDiscoveredDevices([buildDevice(this.gladys, zone)]);
   }
 
   snap(t = this.now()) {
@@ -153,19 +188,9 @@ export class EntsoeApp {
 
   // --- Reading ENTSO-E -------------------------------------------------------
 
-  /** 13:00 Brussels time of the market day of `t`. */
-  tomorrowFrom(t) {
-    return zonedTime(
-      localDate(t, MARKET_TIMEZONE),
-      MARKET_TIMEZONE,
-      TOMORROW_FROM.hour,
-      TOMORROW_FROM.minute,
-    );
-  }
-
+  /** Something publishable at `t` is missing (see snapshot()). */
   needsReading(t = this.now()) {
-    const snap = this.snap(t);
-    return !snap.todayComplete || (t >= this.tomorrowFrom(t) && !snap.tomorrowComplete);
+    return !this.snap(t).allComplete;
   }
 
   /** Read today and tomorrow once. Single-flight; `manual` for the button. */
@@ -206,8 +231,10 @@ export class EntsoeApp {
         end: dayOf(now, timezone, 2).start,
       });
       if (result.kind === 'prices' && result.slots.length === 0 && result.skipped.length > 0) {
+        // Distinguish a zone priced in another unit from an unusable answer.
+        const unit = result.skipped.some((s) => s.startsWith('unit '));
         throw new EntsoeError(
-          'unsupported',
+          unit ? 'unsupported' : 'unusable',
           `ENTSO-E series skipped: ${result.skipped.join(', ')}`,
         );
       }
@@ -239,7 +266,10 @@ export class EntsoeApp {
     const { timezone } = this.config;
     const now = this.now();
     this.lastError = err;
-    this.logger.warn(`Reading ENTSO-E failed: ${err.code ?? 'error'} (${err.message})`);
+    // Only our own messages are logged: they are built from fixed strings
+    // and sanitized codes, never from a URL (the token is in it).
+    const detail = err instanceof EntsoeError ? err.message : (err?.name ?? 'Error');
+    this.logger.warn(`Reading ENTSO-E failed: ${err?.code ?? 'error'} (${detail})`);
     if (err.code === 'unauthorized') {
       // Stop: the platform will not accept this token by itself. No timer,
       // so no loop; the quarter-hour tick keeps the last prices shown.
@@ -254,7 +284,7 @@ export class EntsoeApp {
     if (err.code === 'rate_limited') {
       delay = clamp(err.retryAfter ?? RATE_LIMIT_DEFAULT, PAUSE_BOUNDS);
       this.pauseUntil = now + delay;
-    } else if (err.code === 'bad_request' || err.code === 'unsupported') {
+    } else if (['bad_request', 'unsupported', 'unusable'].includes(err.code)) {
       delay = BAD_REQUEST_RETRY;
     } else {
       delay = clamp(pick(ERROR_RETRIES, this.errorStreak), PAUSE_BOUNDS);
@@ -276,30 +306,36 @@ export class EntsoeApp {
       () => {
         this.fetchTimer = undefined;
         if (generation === this.generation) {
-          return this.read().catch((err) => this.logger.warn(`Reading failed: ${err.message}`));
+          return this.read().catch((err) =>
+            this.logger.warn(
+              `Reading failed: ${err instanceof EntsoeError ? err.message : err?.name}`,
+            ),
+          );
         }
       },
       Math.max(1_000, at - this.now()),
     );
   }
 
-  /** After an answer: today again later if missing, tomorrow until published, else 13:00 next day. */
+  /**
+   * After an answer: what was published before today's auction missing ->
+   * again in an hour; before 13:00 Brussels -> at 13:00; tomorrow's market
+   * day missing after 13:00 -> spaced retries; all known -> 13:00 next day.
+   */
   scheduleAfterSuccess() {
     const now = this.now();
     const snap = this.snap(now);
-    const from = this.tomorrowFrom(now);
-    if (!snap.todayComplete) {
+    const from = tomorrowFrom(now);
+    if (!snap.baseComplete) {
       this.scheduleRead(now + TODAY_RETRY);
-    } else if (!snap.tomorrowComplete) {
-      if (now < from) {
-        this.scheduleRead(from);
-      } else {
-        this.scheduleRead(now + pick(TOMORROW_RETRIES, this.tomorrowStreak));
-        this.tomorrowStreak += 1;
-      }
+    } else if (now < from) {
+      this.scheduleRead(from);
+    } else if (!snap.allComplete) {
+      this.scheduleRead(now + pick(TOMORROW_RETRIES, this.tomorrowStreak));
+      this.tomorrowStreak += 1;
     } else {
       this.tomorrowStreak = 0;
-      const date = addDays(localDate(now, MARKET_TIMEZONE), now < from ? 0 : 1);
+      const date = addDays(localDate(now, MARKET_TIMEZONE), 1);
       this.scheduleRead(zonedTime(date, MARKET_TIMEZONE, TOMORROW_FROM.hour, TOMORROW_FROM.minute));
     }
   }
@@ -357,8 +393,13 @@ export class EntsoeApp {
     if (this.now() < this.pauseUntil) {
       return T.paused(this.pauseUntil, timezone);
     }
-    await this.fetching?.catch(() => {});
-    await this.read({ manual: true });
+    if (this.fetching) {
+      // A reading is under way: wait for it rather than read again, so the
+      // answer comes within the action's 30 seconds (one HTTP timeout).
+      await this.fetching.catch(() => {});
+    } else {
+      await this.read({ manual: true });
+    }
     if (this.refusedToken === token) {
       return T.refused;
     }

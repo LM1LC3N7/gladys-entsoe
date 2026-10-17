@@ -27,7 +27,9 @@ the notes of the version's GitHub Release.
   quarter hours without any network call. A 429 pauses every reading (its
   Retry-After, between one minute and six hours), other errors are retried
   after 5, 15, 30 then every 60 minutes, and a refused token (401) stops the
-  readings until the token changes or "Read the prices now" is pressed.
+  readings until the configuration is saved or "Read the prices now" is
+  pressed. In a timezone west of Brussels (Lisbon, London), a day is
+  complete once its publishable hours are known: no hourly readings.
 - "Read the prices now" button.
 - `THIRD_PARTY_NOTICES.md` crediting JaccoR/hass-entso-e (Apache-2.0),
   shipped in the image with `LICENSE`.

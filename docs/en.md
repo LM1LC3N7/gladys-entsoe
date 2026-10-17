@@ -26,7 +26,16 @@ One device, **ENTSO-E <zone>**, with these sensors (prices in EUR/kWh):
 | Rank of the current period         | 0 = the cheapest period of the day, 95 the dearest (99 on the autumn DST day)     |
 
 The rank is handy in scenes: "if the rank is below 16" means "during the 16
-cheapest quarter hours of the day" (four hours).
+cheapest quarter hours of the day" (four hours). Equal prices share a rank
+(the rank counts the strictly cheaper periods), so more than 16 periods can
+be "below 16" on a day with ties.
+
+**Tomorrow's lowest price keeps its previous value** until tomorrow's prices
+are published (a number cannot be "unknown" in Gladys): rely on
+"Tomorrow's cheapest period", which shows `--:--` meanwhile. In a timezone
+west of Brussels (Lisbon, London, Canaries), the last local hour of a day
+belongs to the next market day: tomorrow's figures cover the hours already
+published.
 
 **Prices are wholesale prices.** Your supplier adds its margin, the grid
 fees and the taxes. Two options bring them closer to your bill: **fixed
@@ -81,8 +90,12 @@ address.
   published. The next reading is at 13:00 the day after.
 - In between, the sensors move every quarter hour from the prices in
   memory, **without any network call**. At midnight, tomorrow becomes today.
-- A restart or a reconnection to Gladys keeps the prices and does not read
-  again when today and tomorrow are known.
+- A reconnection to Gladys (the container keeps running) keeps the prices,
+  the 429 pause, a refused token and the waiting time after an error, and
+  does not read again when today and tomorrow are known. A restart of the
+  container starts afresh: it reads once.
+- Saving the configuration reads at once, even with the same token after a
+  refusal (one request).
 
 ## Errors
 
@@ -95,12 +108,14 @@ address.
 
 ## How the data is read
 
-The integration asks the A44 document (day-ahead prices). Since 1 October
-2025 the European day-ahead market uses **15-minute** periods; older or
-other answers in **60-minute** periods are read as well. A period missing in
-the answer repeats the price before it (the ENTSO-E rule for "variable sized
-blocks"), and the 23- and 25-hour days of the clock changes are handled. The
-answer is read with a bounded, linear parser and refused beyond 256 KB.
+The integration asks the A44 document (day-ahead prices, contract type A01).
+Since 1 October 2025 the European day-ahead market uses **15-minute**
+periods; older or other answers in **60-minute** periods are read as well.
+In a "variable sized blocks" curve (A03), a period missing in the answer
+repeats the price before it (the ENTSO-E rule); in other curves a missing
+period stays without price. The 23- and 25-hour days of the clock changes
+are handled. The answer is read with a bounded, linear parser and refused
+beyond 256 KB.
 
 ## Limits
 

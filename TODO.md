@@ -18,6 +18,11 @@
       reason 999, answered with HTTP 200 or 400 (both are handled).
 - [ ] A wrong token answers 401 (not 403, which is treated as a passing
       error); a token whose API access is not enabled yet answers 401 too.
+- [ ] The platform accepts `contract_MarketAgreement.type=A01` on A44 for
+      every zone (entsoe-py sends it; not checked against the official
+      guide, which could not be read here).
+- [ ] Whether a whole market day is returned when the window starts inside
+      it (a timezone other than CET asks from its own midnight).
 - [ ] The answer size for two days (expected 20-40 KB, cap 256 KB).
 - [ ] The zones whose prices are not in EUR on the platform, if any (they
       are reported "not priced in EUR/MWh").
@@ -53,8 +58,33 @@
   an invalid name falls back to it). It sets the local days of the
   statistics and the times shown; the market schedule (13:00) stays on
   Brussels time.
-- **Tomorrow is "published"** only when the whole local day of tomorrow is
-  covered (a timezone east of CET would otherwise see a partial day early).
+- **"Complete" is judged on the publishable part of a local day** (review
+  fix): up to the end of today's Brussels market day before 13:00, of
+  tomorrow's after. A local day west of Brussels (Lisbon, London, Canaries)
+  straddles two market days: judged on whole days, it was never complete
+  and read every hour (31 requests in 48 h instead of 3). Tomorrow counts
+  only after 13:00 Brussels time (east of Brussels, the first hour of the
+  local tomorrow is known before), and its stats cover its known part.
+- **Curve type** (review fix): the "repeat the previous price" rule applies
+  to curve A03 only; in A01 or without a curve type a missing position has
+  no slot; any other curve type skips its series. A position outside its
+  period refuses the period, like an unreadable point.
+- **Reason 999 is "no data yet" only with "No matching data"** in its text;
+  any other acknowledgement is a refusal (every 6 hours). Remote codes are
+  kept only when they match `[A-Z0-9]{1,4}`; remote texts in messages are
+  stripped of control characters and cut at 20 characters.
+- **`contract_MarketAgreement.type=A01`** is sent with the request, as
+  EnergieID/entsoe-py (maintained) does for A44; series with another
+  contract type are still skipped if the platform returns them.
+- **Logs**: a reading error is logged with its message only when it is one
+  of ours (`EntsoeError`, fixed strings); any other error by its name only,
+  since a runtime may put the URL (and the token) in its message. A failing
+  body stream becomes a fixed `network` / `timeout` error.
+- **A failed discovery** (`publishDiscoveredDevices`) is logged and does not
+  stop the readings nor the tick; a scan before the first start uses the
+  default zone.
+- **The button** waits for a reading under way instead of asking again, so
+  it answers within its 30 seconds (one 20-second HTTP timeout).
 - **Overlapping series**: classification sequence 1 first, then the finer
   resolution; a period overlapping one already taken is dropped whole. No
   averaging between resolutions (hass-entso-e's option): the sensors show
@@ -65,15 +95,19 @@
   quarter hours in two series (as DE-LU published) with ENTSO-E's
   indentation approach 40-70 KB. Beyond it, refused unread.
 - **401 stops the readings**, as the brief asks: no retry timer (no loop),
-  the tick keeps the last prices; a new token, a configuration save or the
-  button reads again. The button is manual and asks once, so it is allowed
-  to retry a refused token (ENTSO-E enables API access by hand, days after
-  the token is generated). Restarts and reconnections keep the refusal.
+  the tick keeps the last prices; a new token, a configuration save by the
+  user (`onConfigUpdated` → `start(config, { userSaved: true })`, one
+  request even with the same token) or the button reads again. The button
+  is manual and asks once, so it is allowed to retry a refused token
+  (ENTSO-E enables API access by hand, days after the token is generated).
+  A reconnection to Gladys keeps the refusal, the 429 pause and the backoff
+  of a failed reading; nothing is persisted, so a container restart reads
+  once.
 - **403 is a passing error** (backoff), not a refused token: ENTSO-E
   documents 401 for a bad token.
 - **429**: Retry-After within [1 min, 6 h], 10 minutes when absent (the
   platform's ban after 400 requests a minute lasts 10 minutes); every path
-  (timer, restart, reconnection, button) waits for it.
+  (timer, configuration save, reconnection, button) waits for it.
 - **5xx / network / timeout**: 5, 15, 30, then every 60 minutes; the last
   prices stay shown ("Showing the last prices read").
 - **400 (other than "no data") and non-EUR zones**: every 6 hours, they will

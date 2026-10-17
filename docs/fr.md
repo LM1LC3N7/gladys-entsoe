@@ -28,7 +28,17 @@ Un appareil, **ENTSO-E <zone>**, avec ces capteurs (prix en €/kWh) :
 
 Le rang est pratique dans les scènes : « si le rang est inférieur à 16 »
 veut dire « pendant les 16 quarts d'heure les moins chers de la journée »
-(quatre heures).
+(quatre heures). Des prix égaux partagent le même rang (le rang compte les
+périodes strictement moins chères) : un jour avec des égalités, plus de 16
+périodes peuvent être « en dessous de 16 ».
+
+**Le prix le plus bas de demain garde son ancienne valeur** jusqu'à la
+publication des prix de demain (un nombre ne peut pas être « inconnu » dans
+Gladys) : fiez-vous à « période la moins chère de demain », qui affiche
+`--:--` en attendant. Dans un fuseau à l'ouest de Bruxelles (Lisbonne,
+Londres, Canaries), la dernière heure locale d'une journée appartient au
+jour de marché suivant : les valeurs de demain portent sur les heures déjà
+publiées.
 
 Les noms des capteurs sont en anglais dans Gladys (ils sont fixés à la
 création de l'appareil).
@@ -89,8 +99,12 @@ donc jamais d'adresse dans ses journaux.
 - Entre deux lectures, les capteurs avancent chaque quart d'heure à partir
   des prix en mémoire, **sans aucun appel réseau**. À minuit, demain devient
   aujourd'hui.
-- Un redémarrage ou une reconnexion à Gladys garde les prix et ne relit pas
-  quand aujourd'hui et demain sont connus.
+- Une reconnexion à Gladys (le conteneur continue de tourner) garde les
+  prix, la pause 429, un jeton refusé et le délai d'attente après une
+  erreur, et ne relit pas quand aujourd'hui et demain sont connus. Un
+  redémarrage du conteneur repart de zéro : il lit une fois.
+- Enregistrer la configuration relit aussitôt, même avec le même jeton
+  après un refus (une requête).
 
 ## Erreurs
 
@@ -103,12 +117,13 @@ donc jamais d'adresse dans ses journaux.
 
 ## Comment les données sont lues
 
-L'intégration demande le document A44 (prix du lendemain). Depuis le
-1er octobre 2025, le marché européen du lendemain fonctionne au **quart
-d'heure** ; les réponses en périodes de **60 minutes** sont lues aussi. Une
-période absente de la réponse reprend le prix précédent (la règle ENTSO-E
-des « blocs de taille variable »), et les journées de 23 et 25 heures des
-changements d'heure sont gérées. La réponse est lue par un analyseur borné
+L'intégration demande le document A44 (prix du lendemain, type de contrat
+A01). Depuis le 1er octobre 2025, le marché européen du lendemain fonctionne
+au **quart d'heure** ; les réponses en périodes de **60 minutes** sont lues
+aussi. Dans une courbe en « blocs de taille variable » (A03), une période
+absente de la réponse reprend le prix précédent (la règle ENTSO-E) ; dans
+les autres courbes, une période absente reste sans prix. Les journées de 23
+et 25 heures des changements d'heure sont gérées. La réponse est lue par un analyseur borné
 et linéaire, et refusée au-delà de 256 Ko.
 
 ## Limites

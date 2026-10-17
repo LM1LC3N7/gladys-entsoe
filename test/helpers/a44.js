@@ -31,7 +31,14 @@ ${points.join('\n')}
 
 export function series(
   periods,
-  { sequence, contract = 'A01', currency = 'EUR', unit = 'MWH', eic = '10YFR-RTE------C' } = {},
+  {
+    sequence,
+    contract = 'A01',
+    currency = 'EUR',
+    unit = 'MWH',
+    eic = '10YFR-RTE------C',
+    curve = 'A03',
+  } = {},
 ) {
   return `<TimeSeries>
 <mRID>1</mRID>
@@ -42,7 +49,7 @@ export function series(
 <contract_MarketAgreement.type>${contract}</contract_MarketAgreement.type>
 <currency_Unit.name>${currency}</currency_Unit.name>
 <price_Measure_Unit.name>${unit}</price_Measure_Unit.name>
-<curveType>A03</curveType>
+${curve === null ? '' : `<curveType>${curve}</curveType>`}
 ${sequence === undefined ? '' : `<classificationSequence_AttributeInstanceComponent.position>${sequence}</classificationSequence_AttributeInstanceComponent.position>`}
 ${periods.join('\n')}
 </TimeSeries>`;

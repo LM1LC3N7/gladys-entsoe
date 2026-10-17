@@ -46,11 +46,16 @@ test('snapshot: current, next, day stats, rank and the cheapest periods', () => 
   assert.equal(snap.today.min.price, 0);
   assert.equal(hhmm(snap.today.min.start, PARIS), '04:00');
   assert.equal(snap.today.max.price, 0.79);
-  assert.ok(snap.todayComplete && snap.tomorrowComplete);
-  assert.equal(hhmm(snap.tomorrow.min.start, PARIS), '23:45');
-  assert.equal(snap.tomorrow.min.price, 0.105);
+  // Before 13:00 Brussels time, tomorrow is not taken as published.
+  assert.ok(snap.todayComplete && !snap.tomorrowComplete && snap.allComplete);
+  assert.equal(snap.tomorrow, undefined);
   // 0 = cheapest; the 40 periods from 00:00 to 09:45 are all below 240.
   assert.equal(snap.rank, 40);
+  const afternoon = snapshot([...today, ...tomorrow], start + 14 * H, { timezone: PARIS });
+  assert.ok(afternoon.tomorrowComplete && afternoon.allComplete);
+  assert.equal(hhmm(afternoon.tomorrow.min.start, PARIS), '23:45');
+  assert.equal(afternoon.tomorrow.min.price, 0.105);
+  assert.equal(snapshot(today, start + 14 * H, { timezone: PARIS }).allComplete, false);
   const bottom = snapshot(today, start + 4 * H, { timezone: PARIS });
   assert.equal(bottom.rank, 0);
   assert.equal(bottom.tomorrow, undefined);
@@ -60,12 +65,33 @@ test('snapshot: current, next, day stats, rank and the cheapest periods', () => 
 test('snapshot: tomorrow counts only once the whole local day is known', () => {
   const start = zonedTime('2026-10-16', PARIS);
   const slots = [...quarters(start, 96, () => 10), ...quarters(start + 24 * H, 95, () => 5)];
-  assert.equal(snapshot(slots, start + H, { timezone: PARIS }).tomorrowComplete, false);
+  assert.equal(snapshot(slots, start + 14 * H, { timezone: PARIS }).tomorrowComplete, false);
   // Without any price for now: no current, no rank.
   const empty = snapshot([], start, { timezone: PARIS });
   assert.equal(empty.current, undefined);
   assert.equal(empty.rank, undefined);
   assert.equal(empty.today, undefined);
+});
+
+test('west of Brussels (Lisbon): complete on the publishable part of a local day', () => {
+  const LISBON = 'Europe/Lisbon';
+  // Market days are Brussels days: 2026-10-16 is 22:00Z to 22:00Z.
+  const d16 = Date.parse('2026-10-15T22:00:00Z');
+  const market = (from, n) => quarters(from, n * 96, () => 50);
+  const morning = Date.parse('2026-10-16T09:00:00Z'); // 10:00 Lisbon, 11:00 Brussels
+  // Known: the market days 16 (and 15's tail). Lisbon's 16 ends 23:00Z, an
+  // hour into Brussels' 17, which is not publishable before 13:00.
+  const before = snapshot(market(d16, 1), morning, { timezone: LISBON });
+  assert.ok(before.todayComplete && before.baseComplete && before.allComplete);
+  // After 13:00 Brussels, tomorrow (market 17) is due; its known part is
+  // Lisbon's 17 up to 22:00Z, the end of Brussels' 17.
+  const afternoon = Date.parse('2026-10-16T12:00:00Z');
+  const withTomorrow = market(d16, 2);
+  const after = snapshot(withTomorrow, afternoon, { timezone: LISBON });
+  assert.ok(after.todayComplete && after.tomorrowComplete && after.allComplete);
+  assert.equal(after.tomorrow.min.start, Date.parse('2026-10-16T23:00:00Z'));
+  const missing = snapshot(market(d16, 1), afternoon, { timezone: LISBON });
+  assert.ok(missing.baseComplete && !missing.allComplete && !missing.tomorrowComplete);
 });
 
 test('the autumn DST day has 100 quarter hours and ranks up to 99', () => {

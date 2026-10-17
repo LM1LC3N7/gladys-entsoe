@@ -22,10 +22,12 @@ Ported to JavaScript, and changed (Apache-2.0, section 4 b):
   PT60M periods, a missing position repeating the previous price, the series
   of classification sequence 1 kept first where two overlap. Changed: a
   linear, bounded scanner instead of `xml.etree`, overlaps decided per period
-  span, the positions after the last point filled up to the end of the
-  period (curve A03), unreadable points refusing their period, the "no
-  matching data" acknowledgement recognised, no averaging to another
-  resolution.
+  span, the repetition applied to curve A03 only and up to the end of the
+  period (no filling in A01, other curves skipped), unreadable or
+  out-of-period points refusing their period, the "no matching data"
+  acknowledgement recognised, no averaging to another resolution, the
+  `contract_MarketAgreement.type=A01` parameter added (as EnergieID/entsoe-py
+  sends it).
 - `src/constants.js`: the list of bidding zones and their EIC codes, from
   `AREA_INFO` (`const.py`) and `Area` (`api_client.py`).
 

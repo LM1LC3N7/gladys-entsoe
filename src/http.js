@@ -77,6 +77,15 @@ export async function readBounded(response, limit = MAX_RESPONSE_BYTES) {
   return Buffer.concat(chunks.map((c) => Buffer.from(c))).toString('utf8');
 }
 
+/** A failed request or body read, as a fixed-message EntsoeError. */
+function networkError(err) {
+  const timedOut = err?.name === 'TimeoutError' || err?.name === 'AbortError';
+  // Never err.message: some runtimes put the URL (and the token) in it.
+  return timedOut
+    ? new EntsoeError('timeout', 'ENTSO-E did not answer in time')
+    : new EntsoeError('network', 'ENTSO-E is unreachable (network error)');
+}
+
 /**
  * GET `url`: resolves `{ status, text }` for a 200 or a 400 (the platform
  * explains a 400 in an XML acknowledgement); throws an EntsoeError otherwise.
@@ -90,15 +99,17 @@ export async function getText(url, { timeout = HTTP_TIMEOUT, now = Date.now } = 
       redirect: 'error',
     });
   } catch (err) {
-    const timedOut = err?.name === 'TimeoutError' || err?.name === 'AbortError';
-    // Never err.message: some runtimes put the URL (and the token) in it.
-    throw timedOut
-      ? new EntsoeError('timeout', 'ENTSO-E did not answer in time')
-      : new EntsoeError('network', 'ENTSO-E is unreachable (network error)');
+    throw networkError(err);
   }
   const { status } = response;
   if (status === 200 || status === 400) {
-    return { status, text: await readBounded(response) };
+    try {
+      return { status, text: await readBounded(response) };
+    } catch (err) {
+      // The body stream fails like the request (timeout, reset): same
+      // fixed-message errors, never the original message.
+      throw err instanceof EntsoeError ? err : networkError(err);
+    }
   }
   await response.body?.cancel?.().catch(() => {});
   if (status === 401) {

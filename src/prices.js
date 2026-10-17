@@ -4,6 +4,8 @@
 // prices EUR/MWh, user prices EUR/kWh.
 // -----------------------------------------------------------------------------
 
+import { MARKET_TIMEZONE, TOMORROW_FROM } from './constants.js';
+
 const formats = new Map();
 function format(timezone) {
   let f = formats.get(timezone);
@@ -111,31 +113,76 @@ export function dayOf(t, timezone, offset = 0) {
 }
 
 const within = (slots, day) => slots.filter((s) => s.start >= day.start && s.start < day.end);
-const covered = (slots, day) =>
-  slots.length > 0 && slots.reduce((sum, s) => sum + (s.end - s.start), 0) >= day.end - day.start;
+
+/** True when the slots cover [from, to) entirely (an empty window is covered). */
+export function coveredOn(slots, from, to) {
+  if (to <= from) {
+    return true;
+  }
+  let total = 0;
+  for (const s of slots) {
+    total += Math.max(0, Math.min(s.end, to) - Math.max(s.start, from));
+  }
+  return total >= to - from;
+}
+
+/** 13:00 Brussels time of the market day of `t`: tomorrow may be out from then. */
+export function tomorrowFrom(t) {
+  return zonedTime(
+    localDate(t, MARKET_TIMEZONE),
+    MARKET_TIMEZONE,
+    TOMORROW_FROM.hour,
+    TOMORROW_FROM.minute,
+  );
+}
+
+/** The end of the market day (Brussels) of `t`, plus `offset` days. */
+export function marketDayEnd(t, offset = 0) {
+  return zonedTime(addDays(localDate(t, MARKET_TIMEZONE), 1 + offset), MARKET_TIMEZONE);
+}
 
 /**
  * What the sensors show at `t`, prices converted with the tariff:
- * `{ current, next, today, rank, tomorrow, todayComplete, tomorrowComplete }`.
- * `today` / `tomorrow` are the stats of the local days (tomorrow only once
- * the whole day is known).
+ * `{ current, next, today, rank, tomorrow, todayComplete, tomorrowComplete,
+ * baseComplete, allComplete }`.
+ *
+ * A local day may straddle two market days (Lisbon, London: the last local
+ * hour belongs to the next Brussels day). "Complete" is therefore judged on
+ * the part of a local day that can be published at `t`: up to the end of
+ * today's market day before 13:00 Brussels time, of tomorrow's after.
+ * `baseComplete`: everything already published before today's auction is
+ * known; `allComplete`: everything publishable now is known. Tomorrow's
+ * stats cover its known part, and only after 13:00 (before, a timezone east
+ * of Brussels would already see the first hour of its tomorrow).
  */
 export function snapshot(rawSlots, t, { timezone, vatPercent = 0, feesPerKwh = 0 }) {
   const tariff = { vatPercent, feesPerKwh };
   const slots = rawSlots.map((s) => ({ ...s, price: userPrice(s.price, tariff) }));
   const today = dayOf(t, timezone);
   const tomorrow = dayOf(t, timezone, 1);
+  const auctionDone = t >= tomorrowFrom(t);
+  const cap = marketDayEnd(t, auctionDone ? 1 : 0);
   const todaySlots = within(slots, today);
   const tomorrowSlots = within(slots, tomorrow);
   const current = slots.find((s) => s.start <= t && t < s.end);
   const next = slots.find((s) => s.start >= (current ? current.end : t));
   const todayStats = stats(todaySlots);
-  const tomorrowComplete = covered(tomorrowSlots, tomorrow);
+  const tomorrowEnd = Math.min(tomorrow.end, cap);
+  const tomorrowComplete =
+    auctionDone &&
+    tomorrowEnd > tomorrow.start &&
+    tomorrowSlots.length > 0 &&
+    coveredOn(slots, tomorrow.start, tomorrowEnd);
   return {
     current,
     next,
     today: todayStats,
-    todayComplete: covered(todaySlots, today),
+    todayComplete: todaySlots.length > 0 && coveredOn(slots, today.start, Math.min(today.end, cap)),
+    baseComplete:
+      todaySlots.length > 0 &&
+      coveredOn(slots, today.start, Math.min(tomorrow.end, marketDayEnd(t))),
+    allComplete:
+      todaySlots.length > 0 && coveredOn(slots, today.start, Math.min(tomorrow.end, cap)),
     // 0 = the cheapest period of the day; equal prices share a rank.
     rank:
       current && todaySlots.includes(current)

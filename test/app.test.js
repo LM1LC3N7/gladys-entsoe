@@ -27,26 +27,30 @@ afterEach(() => fake?.restore());
 const todayPrice = (i) => Math.abs(i - 16) * 10;
 const tomorrowPrice = (i) => (i === 10 ? -5 : 80 + i);
 
-/** A fake ENTSO-E: today always, tomorrow once `market.published`. */
-function platform(market) {
+const instant = (text) =>
+  Date.parse(text.replace(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})$/, '$1-$2-$3T$4:$5:00Z'));
+
+/**
+ * A fake ENTSO-E answering the Brussels market days that overlap the asked
+ * window: today and before always, a later day once in `market.published`,
+ * or, with `market.auto`, from 13:00 Brussels time the day before (CEST).
+ */
+function platform(market, clock) {
   return (call) => {
     if (market.answer) {
       return market.answer(call);
     }
-    const start = Date.parse(
-      call.params.periodStart.replace(
-        /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})$/,
-        '$1-$2-$3T$4:$5:00Z',
-      ),
-    );
+    const start = instant(call.params.periodStart);
+    const end = instant(call.params.periodEnd);
     const periods = [];
-    for (const [dayStart, price] of [
-      [TODAY, todayPrice],
-      [TOMORROW, tomorrowPrice],
-      [TOMORROW + 24 * H, () => 70],
-    ]) {
-      const visible = dayStart < TOMORROW || market.published.includes(dayStart);
-      if (dayStart >= start && visible) {
+    for (let k = -1; k <= 3; k += 1) {
+      const dayStart = TODAY + k * 24 * H;
+      const price = k === 0 ? todayPrice : k === 1 ? tomorrowPrice : () => 70;
+      const visible =
+        dayStart < TOMORROW ||
+        market.published.includes(dayStart) ||
+        (market.auto && clock.now >= dayStart - 11 * H);
+      if (dayStart < end && dayStart + 24 * H > start && visible) {
         periods.push(day(dayStart, { price }));
       }
     }
@@ -54,10 +58,10 @@ function platform(market) {
   };
 }
 
-function setup({ now = MORNING, published = [] } = {}) {
-  const market = { published, answer: undefined };
-  fake = installFetch(platform(market));
+function setup({ now = MORNING, published = [], auto = false } = {}) {
+  const market = { published, auto, answer: undefined };
   const clock = { now };
+  fake = installFetch(platform(market, clock));
   const timers = createFakeTimers(clock);
   const logs = [];
   const logger = {
@@ -270,6 +274,104 @@ test('without a token nothing is asked, and the status says what to do', async (
   assert.match(JSON.stringify(await gladys.fake.action(ACTION_TEST)), /does not look like/);
   assert.equal(fake.calls.length, 0);
   assert.equal(app.fetchTimer, undefined);
+  await app.stop();
+});
+
+test('Lisbon (west of Brussels): three readings in 48 hours, tomorrow shown after 13:00', async () => {
+  const { app, gladys, timers, clock } = setup({ auto: true });
+  await app.start({ ...CONFIG, timezone: 'Europe/Lisbon' });
+  assert.equal(fake.calls.length, 1);
+  assert.equal(gladys.fake.lastState(f('tomorrow_cheapest_time')), '--:--');
+  const end = MORNING + 48 * H;
+  let tomorrowShown;
+  while (clock.now < end) {
+    await timers.fire();
+    if (clock.now > AT_13 && clock.now < AT_13 + H && tomorrowShown === undefined) {
+      tomorrowShown = gladys.fake.lastState(f('tomorrow_cheapest_time'));
+    }
+  }
+  assert.equal(fake.calls.length, 3, 'start, then 13:00 on each day');
+  // Brussels' 17 starts at 22:00Z (23:00 Lisbon on the 16th); Lisbon's 17
+  // starts at 23:00Z. Its cheapest known period is position 11 of Brussels'
+  // 17: 00:30Z, 02:30 in Paris, 01:30 in Lisbon.
+  assert.equal(tomorrowShown, '01:30');
+  await app.stop();
+});
+
+test('an unexpected error is logged by its name only (its message may hold the URL)', async () => {
+  const { gladys, clock, timers, logs } = setup();
+  const app = new EntsoeApp({
+    gladys,
+    logger: { info() {}, warn: (m) => logs.push(m), error() {}, debug() {} },
+    now: () => clock.now,
+    timers,
+    fetch: async () => {
+      throw new TypeError(`bad https://web-api.tp.entsoe.eu/api?securityToken=${TOKEN}`);
+    },
+  });
+  await app.start(CONFIG);
+  assert.ok(logs.some((line) => line.includes('(TypeError)')));
+  assert.ok(logs.every((line) => !line.includes(TOKEN)));
+  assert.ok(app.nextFetchAt > clock.now, 'retried later');
+  await app.stop();
+});
+
+test('after a 401, saving the configuration with the same token asks once; a reconnection does not', async () => {
+  const { app, gladys, market } = setup();
+  market.answer = () => status(401);
+  await app.start(CONFIG);
+  await app.start(CONFIG);
+  assert.equal(fake.calls.length, 1);
+  market.answer = undefined;
+  await app.start(CONFIG, { userSaved: true });
+  assert.equal(fake.calls.length, 2);
+  assert.equal(gladys.fake.connectionStatus.connected, true);
+  await app.stop();
+});
+
+test('a reconnection keeps the backoff of a failed reading', async () => {
+  const { app, market } = setup();
+  market.answer = () => status(503);
+  await app.start(CONFIG);
+  assert.equal(fake.calls.length, 1);
+  const next = app.nextFetchAt;
+  await app.stop();
+  await app.start(CONFIG);
+  assert.equal(fake.calls.length, 1);
+  assert.equal(app.nextFetchAt, next);
+  await app.stop();
+});
+
+test('a failed discovery does not stop the readings; a scan before start works', async () => {
+  const { app, gladys } = setup();
+  await app.publishDevices();
+  assert.equal(gladys.fake.discoveredDevices[0].external_id, DEVICE);
+  gladys.publishDiscoveredDevices = async () => {
+    throw new Error('Gladys refused');
+  };
+  await app.start(CONFIG);
+  assert.equal(fake.calls.length, 1);
+  assert.equal(gladys.fake.lastState(f('current_price')), 0.24);
+  await app.stop();
+});
+
+test('the button waits for a reading under way instead of asking again', async () => {
+  const { app, gladys, market } = setup();
+  let release;
+  market.answer = () =>
+    new Promise((resolve) => {
+      release = resolve;
+    });
+  const starting = app.start(CONFIG);
+  while (!release) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  const ack = gladys.fake.action(ACTION_TEST);
+  market.answer = undefined;
+  release(platform(market, { now: MORNING })({ params: fake.calls[0].params }));
+  await starting;
+  assert.match(JSON.stringify(await ack), /ENTSO-E OK for FR/);
+  assert.equal(fake.calls.length, 1);
   await app.stop();
 });
 

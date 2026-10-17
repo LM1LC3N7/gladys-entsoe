@@ -23,6 +23,7 @@ test('the request: A44, EIC of the zone, UTC hours', () => {
     documentType: 'A44',
     in_Domain: '10YFR-RTE------C',
     out_Domain: '10YFR-RTE------C',
+    'contract_MarketAgreement.type': 'A01',
     periodStart: '202610152200',
     periodEnd: '202610172200',
   });
@@ -67,6 +68,41 @@ test('a missing position repeats the previous price, up to the end of the period
       [45 * 60_000, 53],
     ],
   );
+});
+
+test('only a curve A03 repeats: A01 or no curve type leaves the gap, others are skipped', () => {
+  const gappy = (curve) =>
+    parseDocument(document(series([period({ start: START, count: 4, skip: [2, 3] })], { curve })));
+  for (const curve of ['A01', null]) {
+    assert.deepEqual(
+      gappy(curve).slots.map((s) => [(s.start - START) / 900_000, s.price]),
+      [
+        [0, 50],
+        [3, 53],
+      ],
+      String(curve),
+    );
+  }
+  const other = gappy('A02');
+  assert.equal(other.slots.length, 0);
+  assert.deepEqual(other.skipped, ['curve A02']);
+});
+
+test('a position outside its period refuses the period', () => {
+  const doc = document(series([period({ start: START, count: 2 })]));
+  const beyond = doc.replace('<position>2</position>', '<position>3</position>');
+  const parsed = parseDocument(beyond);
+  assert.equal(parsed.slots.length, 0);
+  assert.deepEqual(parsed.skipped, ['unreadable point']);
+});
+
+test('remote texts are sanitized before they reach a message', () => {
+  const parsed = parseDocument(
+    document(series([day(START)], { contract: 'X\u0001'.repeat(30), currency: 'A&#10;B' })),
+  );
+  assert.deepEqual(parsed.skipped, [`contract ${'X'.repeat(20)}`]);
+  const ack = parseDocument(acknowledgement('<b>long code</b>'.replace(/[<>/]/g, ''), 'x'));
+  assert.equal(ack.code, '');
 });
 
 test('negative prices are kept', () => {
@@ -125,6 +161,11 @@ test('intraday, foreign currency and unreadable periods are skipped', () => {
 
 test('acknowledgements: 999 is "no data yet", anything else a refusal', () => {
   assert.deepEqual(parseDocument(acknowledgement()), { kind: 'no_data' });
+  assert.deepEqual(parseDocument(acknowledgement('999', 'Amount of requested data exceeds')), {
+    kind: 'refused',
+    code: '999',
+    reason: 'Amount of requested ',
+  });
   assert.deepEqual(parseDocument(acknowledgement('Z1', 'Bad &amp; wrong')), {
     kind: 'refused',
     code: 'Z1',
@@ -194,4 +235,37 @@ test('the body is read in chunks and refused past the limit', async () => {
     });
   await assert.rejects(readBounded(new Response(stream()), 150), /more than 150 bytes/);
   assert.equal((await readBounded(new Response('<a/>'), 150)).length, 4);
+});
+
+test('a body that fails mid-read becomes a fixed-message error, never the original', async () => {
+  for (const [name, code] of [
+    ['TypeError', 'network'],
+    ['TimeoutError', 'timeout'],
+  ]) {
+    fake = installFetch(
+      () =>
+        new Response(
+          new ReadableStream({
+            pull(controller) {
+              const err = new Error(
+                `terminated https://web-api.tp.entsoe.eu/api?securityToken=${TOKEN}`,
+              );
+              err.name = name;
+              controller.error(err);
+            },
+          }),
+          { status: 200 },
+        ),
+    );
+    await assert.rejects(
+      fetchPrices({ token: TOKEN, zone: 'FR', start: START, end: START + H }),
+      (err) => {
+        assert.ok(err instanceof EntsoeError);
+        assert.equal(err.code, code);
+        assert.ok(!err.message.includes(TOKEN));
+        return true;
+      },
+    );
+    fake.restore();
+  }
 });

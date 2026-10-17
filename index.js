@@ -19,9 +19,11 @@ gladys.onScanRequest(() => app.publishDevices());
 gladys.onAction(ACTION_TEST, () => app.testConnection());
 
 // --- Configuration changed by the user ----------------------------------------
+// A save by the user lifts a refused-token block once (one request), even
+// with the same token: ENTSO-E may have enabled the API access since.
 gladys.onConfigUpdated((config) => {
   logger.info('Configuration updated: restarting');
-  return app.start(config);
+  return app.start(config, { userSaved: true });
 });
 
 // --- Connection lifecycle ------------------------------------------------------

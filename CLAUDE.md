@@ -63,8 +63,13 @@ test/                             node --test, against the SDK's fake Gladys (in
   (`src/http.js`). The token goes to `web-api.tp.entsoe.eu` only.
 - **Be polite with ENTSO-E**: one request at start, tomorrow only from 13:00
   Brussels time and only until published, the tick never calls the network.
-  A 429 pause applies to every path and survives restarts; a 401 stops the
-  readings (no timer) until the token changes or the button is pressed.
+  A 429 pause applies to every path and survives reconnections to Gladys
+  (not a container restart, nothing is persisted); a 401 stops the
+  readings (no timer) until the token changes, the user saves the
+  configuration (`start(config, { userSaved: true })`) or presses the
+  button. "Complete" is judged on the publishable part of a local day
+  (`snapshot()` in `src/prices.js`): a timezone west of Brussels must not
+  read again every hour.
 - **Bounded parsing**: the answer is read up to `MAX_RESPONSE_BYTES`, the
   scanner is linear and refuses DOCTYPE and deep documents; keep it so.
 - **Keys are forever**: the device external id `zone:<key of ZONES>`, the
