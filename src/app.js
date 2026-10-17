@@ -73,6 +73,7 @@ export class EntsoeApp {
     this.tomorrowStreak = 0;
     this.lastError = undefined;
     this.lastStatus = undefined;
+    this.lastStatusArgs = undefined;
     this.generation = 0;
     this.lifecycle = Promise.resolve();
     this.fetching = undefined;
@@ -101,6 +102,10 @@ export class EntsoeApp {
 
   async doStart(raw, { userSaved = false } = {}) {
     await this.doStop();
+    // Gladys keeps the status in memory only: a (re)connection may follow a
+    // restart of the core, so the status is published again, never assumed kept.
+    const previousStatus = this.lastStatusArgs;
+    this.lastStatus = undefined;
     const generation = this.generation;
     const previous = this.config;
     this.config = normalizeConfig(raw);
@@ -142,8 +147,12 @@ export class EntsoeApp {
       this.nextFetchAt !== undefined &&
       this.nextFetchAt > now
     ) {
-      // A reconnection does not shortcut the backoff of a failed reading.
+      // A reconnection does not shortcut the backoff of a failed reading; the
+      // status of that failure is said again.
       this.scheduleRead(this.nextFetchAt);
+      if (previousStatus) {
+        await this.setStatus(...previousStatus);
+      }
       return;
     }
     if (this.needsReading()) {
@@ -167,6 +176,7 @@ export class EntsoeApp {
   }
 
   async setStatus(connected, message) {
+    this.lastStatusArgs = [connected, message];
     const key = JSON.stringify([connected, message ?? null]);
     if (key === this.lastStatus) {
       return;

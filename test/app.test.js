@@ -358,6 +358,53 @@ test('after a 401, saving the configuration with the same token asks once; a rec
   await app.stop();
 });
 
+test('disconnection then reconnection (Gladys restarted): status and Discovery published again', async () => {
+  // Each case on a fresh installation: prices known; a refused token; a 503
+  // in its retry delay; a 429 pause. The reconnection must say the same
+  // status again and ask ENTSO-E nothing.
+  const cases = [
+    { name: 'prices known', check: (app) => assert.equal(app.lastError, undefined) },
+    {
+      name: '401',
+      answer: () => status(401),
+      check: (app) => assert.equal(app.refusedToken, TOKEN),
+    },
+    {
+      name: '503',
+      answer: () => status(503),
+      check: (app) => assert.equal(app.lastError?.code, 'server'),
+    },
+    {
+      name: '429',
+      answer: () => status(429, { 'retry-after': '600' }),
+      check: (app) => {
+        assert.equal(app.lastError?.code, 'rate_limited');
+        assert.ok(app.pauseUntil > MORNING);
+      },
+    },
+  ];
+  for (const { name, answer, check } of cases) {
+    fake?.restore();
+    const { app, gladys, market } = setup();
+    const discoveries = () => gladys.fake.bodies('POST', '/discovered_device').length;
+    market.answer = answer;
+    await app.start(CONFIG);
+    assert.equal(fake.calls.length, 1, name);
+    check(app);
+    const statuses = gladys.fake.connectionStatuses.length;
+    const published = discoveries();
+    const before = gladys.fake.connectionStatus;
+    // index.js: 'disconnected' stops, 'connected' starts again.
+    await app.stop();
+    await app.start(CONFIG);
+    assert.equal(gladys.fake.connectionStatuses.length, statuses + 1, `${name}: one more status`);
+    assert.deepEqual(gladys.fake.connectionStatus, before, `${name}: the same status`);
+    assert.equal(discoveries(), published + 1, `${name}: Discovery again`);
+    assert.equal(fake.calls.length, 1, `${name}: nothing asked again`);
+    await app.stop();
+  }
+});
+
 test('a reconnection keeps the backoff of a failed reading', async () => {
   const { app, market } = setup();
   market.answer = () => status(503);
