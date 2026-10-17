@@ -317,7 +317,7 @@ test('an unexpected error is logged by its name only (its message may hold the U
 });
 
 test('Helsinki (east of Brussels): tomorrow_min is not rewritten from 00:00 to 14:00', async () => {
-  const { app, gladys, timers, clock } = setup({ now: AT_13 + H, auto: true });
+  const { app, gladys, timers } = setup({ now: AT_13 + H, auto: true });
   await app.start({ ...CONFIG, timezone: 'Europe/Helsinki' });
   // Tomorrow (the 17th in Helsinki) is out: its cheapest is position 11 of
   // Brussels' 17, 00:30Z = 03:30 in Helsinki.
