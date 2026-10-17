@@ -1,177 +1,433 @@
 {
   "manifest_version": 1,
   "type": "device",
-  "name": "Demo Devices Template",
+  "name": "ENTSO-E",
   "description": {
-    "en": "Starter template showing sensors, a switch, a dimmable light and a smart plug.",
-    "fr": "Template de démarrage : capteurs, interrupteur, lampe variable et prise connectée."
+    "en": "Unofficial connector: ENTSO-E day-ahead electricity prices for Europe, per kWh.",
+    "fr": "Connecteur non officiel : prix spot ENTSO-E du lendemain en Europe, au kWh."
   },
-  "version": "1.0.0",
-  "docker_image": "ghcr.io/gladysassistant/integration-template-js:1.0.0",
+  "version": "0.1.0",
+  "docker_image": "ghcr.io/lm1lc3n7/gladys-entsoe:0.1.0",
   "gladys_version": ">=5.1.0",
-  "cover_image": "https://raw.githubusercontent.com/GladysAssistant/integration-template-js/master/cover.png",
-  "categories": ["lighting", "security", "environment"],
-  "transports": ["local", "cloud"],
+  "cover_image": "https://raw.githubusercontent.com/LM1LC3N7/gladys-entsoe/main/cover.png",
+  "categories": ["energy"],
+  "transports": ["cloud"],
   "config_schema": [
     {
       "key": "intro",
       "type": "section",
-      "label": { "en": "Getting started", "fr": "Pour commencer" },
+      "label": {
+        "en": "ENTSO-E day-ahead prices",
+        "fr": "Prix ENTSO-E du lendemain"
+      },
       "description": {
-        "en": "The demo weather station reads real data from the free Open-Meteo API: pick the coordinates to observe. No account, no API key.",
-        "fr": "La station météo de démonstration lit de vraies données via l'API gratuite Open-Meteo : choisissez les coordonnées à observer. Pas de compte, pas de clé d'API."
+        "en": "Unofficial connector, not affiliated with ENTSO-E. It reads the day-ahead prices of one European bidding zone on the ENTSO-E Transparency Platform with your free security token: one device with the current and next price per kWh, the lowest, highest and average price of the day, the cheapest period of today and tomorrow, and the rank of the current period. Wholesale prices: your supplier adds its margin, the grid fees and the taxes; the VAT and fixed fees below are added for you.",
+        "fr": "Connecteur non officiel, sans lien avec ENTSO-E. Il lit les prix du lendemain d'une zone de marché européenne sur la plateforme de transparence ENTSO-E avec votre jeton de sécurité gratuit : un appareil avec le prix actuel et suivant au kWh, les prix minimum, maximum et moyen du jour, la période la moins chère d'aujourd'hui et de demain, et le rang de la période actuelle. Prix de gros : votre fournisseur ajoute sa marge, les frais de réseau et les taxes ; la TVA et les frais fixes ci-dessous sont ajoutés pour vous."
       },
       "links": [
         {
-          "url": "https://open-meteo.com/en/docs",
-          "label": { "en": "Open-Meteo documentation", "fr": "Documentation Open-Meteo" }
+          "url": "https://transparency.entsoe.eu/",
+          "label": {
+            "en": "ENTSO-E Transparency Platform",
+            "fr": "Plateforme de transparence ENTSO-E"
+          }
+        },
+        {
+          "url": "https://github.com/LM1LC3N7/gladys-entsoe/blob/main/docs/en.md",
+          "label": {
+            "en": "Guide and free token (English)",
+            "fr": "Guide et jeton gratuit (anglais)"
+          }
+        },
+        {
+          "url": "https://github.com/LM1LC3N7/gladys-entsoe/blob/main/docs/fr.md",
+          "label": {
+            "en": "Guide and free token (French)",
+            "fr": "Guide et jeton gratuit (français)"
+          }
         }
       ]
     },
     {
-      "key": "latitude",
-      "type": "number",
-      "label": { "en": "Latitude", "fr": "Latitude" },
-      "description": {
-        "en": "Latitude used for the demo weather sensor.",
-        "fr": "Latitude utilisée par le capteur météo de démonstration."
-      },
-      "placeholder": { "en": "e.g. 48.8566", "fr": "ex. 48.8566" },
+      "key": "security_token",
+      "type": "secret",
       "required": true,
-      "default": 48.8566,
-      "min": -90,
-      "max": 90
+      "label": {
+        "en": "ENTSO-E security token",
+        "fr": "Jeton de sécurité ENTSO-E"
+      },
+      "description": {
+        "en": "Kept by Gladys in its database (in clear, masked in the interface), never shown again, and only sent to ENTSO-E.",
+        "fr": "Gardé par Gladys dans sa base (en clair, masqué dans l'interface), jamais réaffiché, et envoyé seulement à ENTSO-E."
+      },
+      "placeholder": {
+        "en": "e.g. 1d9cd4bd-f8aa-476c-8cc1-3442dc91506d",
+        "fr": "ex. 1d9cd4bd-f8aa-476c-8cc1-3442dc91506d"
+      }
     },
     {
-      "key": "longitude",
-      "type": "number",
-      "label": { "en": "Longitude", "fr": "Longitude" },
-      "description": {
-        "en": "Longitude used for the demo weather sensor.",
-        "fr": "Longitude utilisée par le capteur météo de démonstration."
-      },
-      "placeholder": { "en": "e.g. 2.3522", "fr": "ex. 2.3522" },
-      "required": true,
-      "default": 2.3522,
-      "min": -180,
-      "max": 180
-    },
-    {
-      "key": "unit",
+      "key": "zone",
       "type": "select",
-      "label": { "en": "Temperature unit", "fr": "Unité de température" },
-      "required": false,
-      "default": "celsius",
+      "required": true,
+      "default": "FR",
+      "label": {
+        "en": "Bidding zone",
+        "fr": "Zone de marché"
+      },
+      "description": {
+        "en": "The day-ahead market zone of your meter. Changing it creates a new device.",
+        "fr": "La zone du marché du lendemain de votre compteur. La changer crée un nouvel appareil."
+      },
       "options": [
-        { "value": "celsius", "label": { "en": "Celsius", "fr": "Celsius" } },
-        { "value": "fahrenheit", "label": { "en": "Fahrenheit", "fr": "Fahrenheit" } }
+        {
+          "value": "FR",
+          "label": {
+            "en": "FR – France",
+            "fr": "FR – France"
+          }
+        },
+        {
+          "value": "BE",
+          "label": {
+            "en": "BE – Belgium",
+            "fr": "BE – Belgique"
+          }
+        },
+        {
+          "value": "NL",
+          "label": {
+            "en": "NL – Netherlands",
+            "fr": "NL – Pays-Bas"
+          }
+        },
+        {
+          "value": "DE_LU",
+          "label": {
+            "en": "DE_LU – Germany / Luxembourg",
+            "fr": "DE_LU – Allemagne / Luxembourg"
+          }
+        },
+        {
+          "value": "AT",
+          "label": {
+            "en": "AT – Austria",
+            "fr": "AT – Autriche"
+          }
+        },
+        {
+          "value": "CH",
+          "label": {
+            "en": "CH – Switzerland",
+            "fr": "CH – Suisse"
+          }
+        },
+        {
+          "value": "ES",
+          "label": {
+            "en": "ES – Spain",
+            "fr": "ES – Espagne"
+          }
+        },
+        {
+          "value": "PT",
+          "label": {
+            "en": "PT – Portugal",
+            "fr": "PT – Portugal"
+          }
+        },
+        {
+          "value": "IT_NORD",
+          "label": {
+            "en": "IT_NORD – Italy, North",
+            "fr": "IT_NORD – Italie, Nord"
+          }
+        },
+        {
+          "value": "IT_CNOR",
+          "label": {
+            "en": "IT_CNOR – Italy, Centre-North",
+            "fr": "IT_CNOR – Italie, Centre-Nord"
+          }
+        },
+        {
+          "value": "IT_CSUD",
+          "label": {
+            "en": "IT_CSUD – Italy, Centre-South",
+            "fr": "IT_CSUD – Italie, Centre-Sud"
+          }
+        },
+        {
+          "value": "IT_SUD",
+          "label": {
+            "en": "IT_SUD – Italy, South",
+            "fr": "IT_SUD – Italie, Sud"
+          }
+        },
+        {
+          "value": "IT_CALA",
+          "label": {
+            "en": "IT_CALA – Italy, Calabria",
+            "fr": "IT_CALA – Italie, Calabre"
+          }
+        },
+        {
+          "value": "IT_SICI",
+          "label": {
+            "en": "IT_SICI – Italy, Sicily",
+            "fr": "IT_SICI – Italie, Sicile"
+          }
+        },
+        {
+          "value": "IT_SARD",
+          "label": {
+            "en": "IT_SARD – Italy, Sardinia",
+            "fr": "IT_SARD – Italie, Sardaigne"
+          }
+        },
+        {
+          "value": "DK_1",
+          "label": {
+            "en": "DK_1 – Denmark, West (DK1)",
+            "fr": "DK_1 – Danemark, Ouest (DK1)"
+          }
+        },
+        {
+          "value": "DK_2",
+          "label": {
+            "en": "DK_2 – Denmark, East (DK2)",
+            "fr": "DK_2 – Danemark, Est (DK2)"
+          }
+        },
+        {
+          "value": "NO_1",
+          "label": {
+            "en": "NO_1 – Norway, Oslo (NO1)",
+            "fr": "NO_1 – Norvège, Oslo (NO1)"
+          }
+        },
+        {
+          "value": "NO_2",
+          "label": {
+            "en": "NO_2 – Norway, Kristiansand (NO2)",
+            "fr": "NO_2 – Norvège, Kristiansand (NO2)"
+          }
+        },
+        {
+          "value": "NO_3",
+          "label": {
+            "en": "NO_3 – Norway, Trondheim (NO3)",
+            "fr": "NO_3 – Norvège, Trondheim (NO3)"
+          }
+        },
+        {
+          "value": "NO_4",
+          "label": {
+            "en": "NO_4 – Norway, Tromsø (NO4)",
+            "fr": "NO_4 – Norvège, Tromsø (NO4)"
+          }
+        },
+        {
+          "value": "NO_5",
+          "label": {
+            "en": "NO_5 – Norway, Bergen (NO5)",
+            "fr": "NO_5 – Norvège, Bergen (NO5)"
+          }
+        },
+        {
+          "value": "SE_1",
+          "label": {
+            "en": "SE_1 – Sweden, Luleå (SE1)",
+            "fr": "SE_1 – Suède, Luleå (SE1)"
+          }
+        },
+        {
+          "value": "SE_2",
+          "label": {
+            "en": "SE_2 – Sweden, Sundsvall (SE2)",
+            "fr": "SE_2 – Suède, Sundsvall (SE2)"
+          }
+        },
+        {
+          "value": "SE_3",
+          "label": {
+            "en": "SE_3 – Sweden, Stockholm (SE3)",
+            "fr": "SE_3 – Suède, Stockholm (SE3)"
+          }
+        },
+        {
+          "value": "SE_4",
+          "label": {
+            "en": "SE_4 – Sweden, Malmö (SE4)",
+            "fr": "SE_4 – Suède, Malmö (SE4)"
+          }
+        },
+        {
+          "value": "FI",
+          "label": {
+            "en": "FI – Finland",
+            "fr": "FI – Finlande"
+          }
+        },
+        {
+          "value": "EE",
+          "label": {
+            "en": "EE – Estonia",
+            "fr": "EE – Estonie"
+          }
+        },
+        {
+          "value": "LV",
+          "label": {
+            "en": "LV – Latvia",
+            "fr": "LV – Lettonie"
+          }
+        },
+        {
+          "value": "LT",
+          "label": {
+            "en": "LT – Lithuania",
+            "fr": "LT – Lituanie"
+          }
+        },
+        {
+          "value": "PL",
+          "label": {
+            "en": "PL – Poland",
+            "fr": "PL – Pologne"
+          }
+        },
+        {
+          "value": "CZ",
+          "label": {
+            "en": "CZ – Czechia",
+            "fr": "CZ – Tchéquie"
+          }
+        },
+        {
+          "value": "SK",
+          "label": {
+            "en": "SK – Slovakia",
+            "fr": "SK – Slovaquie"
+          }
+        },
+        {
+          "value": "HU",
+          "label": {
+            "en": "HU – Hungary",
+            "fr": "HU – Hongrie"
+          }
+        },
+        {
+          "value": "SI",
+          "label": {
+            "en": "SI – Slovenia",
+            "fr": "SI – Slovénie"
+          }
+        },
+        {
+          "value": "HR",
+          "label": {
+            "en": "HR – Croatia",
+            "fr": "HR – Croatie"
+          }
+        },
+        {
+          "value": "RO",
+          "label": {
+            "en": "RO – Romania",
+            "fr": "RO – Roumanie"
+          }
+        },
+        {
+          "value": "BG",
+          "label": {
+            "en": "BG – Bulgaria",
+            "fr": "BG – Bulgarie"
+          }
+        },
+        {
+          "value": "GR",
+          "label": {
+            "en": "GR – Greece",
+            "fr": "GR – Grèce"
+          }
+        },
+        {
+          "value": "RS",
+          "label": {
+            "en": "RS – Serbia",
+            "fr": "RS – Serbie"
+          }
+        }
       ]
     },
     {
-      "key": "poll_frequency",
+      "key": "vat_percent",
       "type": "number",
-      "label": { "en": "Refresh interval (s)", "fr": "Intervalle de rafraîchissement (s)" },
-      "description": {
-        "en": "How often sensors are polled, in seconds (one minute minimum).",
-        "fr": "Fréquence d'interrogation des capteurs, en secondes (une minute minimum)."
-      },
       "required": false,
-      "default": 300,
-      "min": 60,
-      "max": 3600
+      "default": 0,
+      "min": 0,
+      "max": 50,
+      "label": {
+        "en": "VAT (%)",
+        "fr": "TVA (%)"
+      },
+      "description": {
+        "en": "Added to every price: (spot + fixed fees) × (1 + VAT). 0 keeps the wholesale price.",
+        "fr": "Ajoutée à chaque prix : (spot + frais fixes) × (1 + TVA). 0 garde le prix de gros."
+      }
+    },
+    {
+      "key": "fees_per_kwh",
+      "type": "number",
+      "required": false,
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "label": {
+        "en": "Fixed fees (EUR/kWh)",
+        "fr": "Frais fixes (€/kWh)"
+      },
+      "description": {
+        "en": "Added to the spot price of every kWh before VAT (supplier margin, grid fees, taxes).",
+        "fr": "Ajoutés au prix spot de chaque kWh avant TVA (marge du fournisseur, réseau, taxes)."
+      },
+      "placeholder": {
+        "en": "e.g. 0.12",
+        "fr": "ex. 0.12"
+      }
+    },
+    {
+      "key": "timezone",
+      "type": "string",
+      "required": false,
+      "default": "Europe/Paris",
+      "label": {
+        "en": "Gladys timezone",
+        "fr": "Fuseau horaire de Gladys"
+      },
+      "description": {
+        "en": "The timezone of your Gladys (Settings → System): it sets the days and the times shown. IANA name, e.g. Europe/Brussels.",
+        "fr": "Le fuseau de votre Gladys (Paramètres → Système) : il fixe les jours et les heures affichées. Nom IANA, ex. Europe/Brussels."
+      },
+      "placeholder": {
+        "en": "Europe/Paris",
+        "fr": "Europe/Paris"
+      }
     }
   ],
   "actions": [
     {
-      "key": "test_weather",
-      "label": { "en": "Test the weather provider", "fr": "Tester le fournisseur météo" },
-      "timeout_seconds": 30
-    },
-    {
-      "key": "identify",
-      "label": { "en": "Identify a device", "fr": "Identifier un appareil" },
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Device", "fr": "Appareil" },
-          "required": true
-        }
-      ]
-    }
-  ],
-  "scene_triggers": [
-    {
-      "key": "motion_detected",
-      "label": { "en": "Motion detected", "fr": "Mouvement détecté" },
-      "description": {
-        "en": "A demo motion sensor saw a person or an animal move.",
-        "fr": "Un détecteur de démonstration a vu bouger une personne ou un animal."
+      "key": "test_connection",
+      "timeout_seconds": 30,
+      "label": {
+        "en": "Read the prices now",
+        "fr": "Lire les prix maintenant"
       },
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Sensor", "fr": "Détecteur" }
-        },
-        {
-          "key": "target",
-          "type": "multi_select",
-          "label": { "en": "What moved", "fr": "Ce qui a bougé" },
-          "options": [
-            { "value": "person", "label": { "en": "Person", "fr": "Personne" } },
-            { "value": "animal", "label": { "en": "Animal", "fr": "Animal" } }
-          ]
-        }
-      ],
-      "variables": [
-        {
-          "key": "target",
-          "type": "string",
-          "label": { "en": "What moved", "fr": "Ce qui a bougé" }
-        }
-      ]
-    }
-  ],
-  "scene_actions": [
-    {
-      "key": "identify_device",
-      "label": { "en": "Identify a device", "fr": "Identifier un appareil" },
       "description": {
-        "en": "Make a device signal itself (the demo light blinks).",
-        "fr": "Fait se signaler un appareil (la lampe de démonstration clignote)."
-      },
-      "timeout_seconds": 15,
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Device", "fr": "Appareil" },
-          "required": true
-        }
-      ],
-      "outputs": [
-        {
-          "key": "signalled",
-          "type": "boolean",
-          "label": { "en": "Device signalled", "fr": "Appareil signalé" }
-        }
-      ]
-    }
-  ],
-  "widgets": [
-    {
-      "key": "demo_status",
-      "label": { "en": "Demo status", "fr": "État de la démo" },
-      "description": {
-        "en": "Live temperature and plug power, plug connection and observed location.",
-        "fr": "Température et puissance en direct, connexion de la prise, position observée."
-      },
-      "icon": "activity",
-      "action_timeout_seconds": 15
+        "en": "Reads today's and tomorrow's prices and shows the current one (also after a refused token).",
+        "fr": "Lit les prix d'aujourd'hui et de demain et affiche le prix actuel (aussi après un jeton refusé)."
+      }
     }
   ]
 }

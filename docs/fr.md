@@ -1,67 +1,125 @@
-# Template de démonstration
+# Prix ENTSO-E du lendemain
 
-Ceci est la documentation utilisateur de l'intégration. Gladys ré-héberge ce
-fichier et affiche un lien **Documentation** permanent vers lui dans l'écran
-de configuration (dans la langue de l'utilisateur, avec l'anglais en repli) —
-c'est au moment de configurer que l'utilisateur en a le plus besoin. Gardez
-les courtes indications d'accueil dans les blocs `section` du `config_schema`
-du manifest ; mettez ici le pas-à-pas détaillé (captures d'écran, dépannage…).
+**Connecteur non officiel, sans lien avec ENTSO-E.** Il lit les prix de
+l'électricité du marché du lendemain (day-ahead) d'une zone de marché
+européenne sur la
+[plateforme de transparence ENTSO-E](https://transparency.entsoe.eu/), la
+plateforme publique des gestionnaires de réseau de transport européens,
+avec un jeton de sécurité personnel et gratuit.
+
+> **Jamais testé avec un vrai jeton.** Cette première version a été
+> construite et testée uniquement sur des réponses reproduites d'après la
+> documentation (aucun compte ENTSO-E n'était disponible). Merci de signaler
+> ce que vous observez sur le fil du forum ou dans une issue GitHub.
 
 ## Ce que vous obtenez
 
-Six appareils de démonstration apparaissent après l'installation : une
-station météo (vraies données Open-Meteo), un interrupteur, une lampe
-variable, une prise connectée avec mesure de puissance, un détecteur de
-mouvement et une caméra.
+Un appareil, **ENTSO-E <zone>**, avec ces capteurs (prix en €/kWh) :
 
-## Configuration
+| Capteur                                  | Contenu                                                                                           |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Prix actuel                              | le prix de la période en cours (15 ou 60 minutes)                                                 |
+| Prix de la prochaine période             | le prix de la période suivante                                                                    |
+| Minimum / maximum / moyenne du jour      | sur les périodes de votre journée locale (moyenne pondérée par la durée)                          |
+| Période la moins chère du jour (début)   | `HH:MM`, heure locale                                                                             |
+| Prix le plus bas de demain               | une fois demain publié (en général entre 12 h 45 et 13 h 30, heure de Bruxelles)                  |
+| Période la moins chère de demain (début) | `HH:MM`, ou `--:--` tant que demain n'est pas publié                                              |
+| Rang de la période actuelle              | 0 = la période la moins chère du jour, 95 la plus chère (99 le jour du passage à l'heure d'hiver) |
 
-1. Ouvrez l'onglet **Configuration** de l'intégration.
-2. Renseignez la **latitude** et la **longitude** que la station météo de
-   démonstration doit observer (Paris par défaut), et choisissez votre unité
-   de température. L'**intervalle de rafraîchissement** règle la fréquence
-   de lecture de la station météo et de la puissance de la prise : toutes
-   les 5 minutes par défaut, toutes les minutes au plus.
-3. Enregistrez : les appareils apparaissent dans l'onglet **Découverte**,
-   prêts à être ajoutés.
+Le rang est pratique dans les scènes : « si le rang est inférieur à 16 »
+veut dire « pendant les 16 quarts d'heure les moins chers de la journée »
+(quatre heures).
 
-Le réglage **Préférer la connexion locale** pilote la prise de
-démonstration : elle affiche en badge le canal réellement utilisé (local ou
-cloud), avec un point orange quand elle fonctionne en mode dégradé (local
-refusé, bascule cloud).
+Les noms des capteurs sont en anglais dans Gladys (ils sont fixés à la
+création de l'appareil).
 
-## Actions
+**Ce sont des prix de gros.** Votre fournisseur ajoute sa marge, les frais
+de réseau et les taxes. Deux options rapprochent le prix de votre facture :
+les **frais fixes** (€/kWh, ajoutés au prix spot) et la **TVA** (%,
+appliquée à la somme) : prix = (spot ÷ 1000 + frais) × (1 + TVA ÷ 100). Un
+prix spot négatif reste négatif, sauf si les frais le dépassent.
 
-- **Tester le fournisseur météo** — effectue une requête en direct vers
-  Open-Meteo et affiche la température et l'humidité actuelles sous le
-  bouton.
-- **Identifier un appareil** — choisissez un de vos appareils dans la liste
-  et il se signale (la lampe de démonstration « clignote » dans les logs).
+## Obtenir un jeton de sécurité gratuit
 
-## Scènes
+1. Créez un compte sur la
+   [plateforme de transparence](https://transparency.entsoe.eu/) (**Login**
+   → **Register**) et confirmez votre adresse e-mail.
+2. Envoyez un e-mail à **transparency@entsoe.eu** avec l'objet
+   **« Restful API access »** et, dans le message, l'adresse e-mail de
+   votre compte. ENTSO-E active l'accès à l'API à la main, en général en
+   quelques jours ouvrés.
+3. Une fois l'accès activé, connectez-vous, ouvrez **My Account Settings**
+   et, sous **Web API Security Token**, cliquez sur **Generate a new
+   token**. Copiez le jeton (il ressemble à
+   `1d9cd4bd-f8aa-476c-8cc1-3442dc91506d`).
 
-L'intégration ajoute ses propres cartes à l'éditeur de scènes (Gladys 5.1
-ou plus récent), dans la catégorie **Intégrations** :
+Le jeton est personnel et gratuit ; ENTSO-E accepte 400 requêtes par
+minute, cette intégration en fait quelques-unes par jour.
 
-- **Mouvement détecté** (déclencheur) — lance la scène quand un détecteur
-  de démonstration voit bouger quelque chose. Choisissez éventuellement le
-  détecteur et ce qui a bougé (personne, animal) ; laissés vides, toute
-  détection correspond. Les actions suivantes peuvent lire ce qui a bougé
-  avec `{{triggerEvent.data.target}}`.
-- **Identifier un appareil** (action) — fait se signaler l'appareil choisi.
-  Elle indique si l'appareil a pu se signaler, pour que les actions
-  suivantes puissent en dépendre.
+## Installation
 
-## Tableau de bord
+1. Installez l'intégration, collez le jeton dans **Jeton de sécurité
+   ENTSO-E**, choisissez votre **zone de marché** (France par défaut) et
+   enregistrez.
+2. Appuyez sur **Lire les prix maintenant** : le prix actuel et la moyenne
+   du jour s'affichent sous le bouton.
+3. Ouvrez **Découverte** et ajoutez l'appareil **ENTSO-E <zone>**.
 
-Ajoutez le widget **État de la démo** à un tableau de bord : il affiche en
-direct la température de la station météo et la puissance de la prise du
-bureau, la connexion utilisée par la prise (en orange si dégradée) et la
-position observée. Son bouton **Identifier la lampe** fait se signaler la
-lampe de démonstration.
+**À propos du jeton :** Gladys le garde dans sa base (en clair, masqué dans
+l'interface, et dans ses sauvegardes), ne le réaffiche jamais, et
+l'intégration ne l'envoie qu'à ENTSO-E (`web-api.tp.entsoe.eu`). La
+plateforme l'exige dans l'adresse de la requête : l'intégration n'écrit
+donc jamais d'adresse dans ses journaux.
 
-## Dépannage
+## Options
 
-L'intégration journalise tout ce qu'elle fait : consultez les logs de
-l'intégration depuis l'interface Gladys (ou `docker logs` sur l'hôte) avec
-`LOG_LEVEL=debug` pour le détail complet.
+| Option                   | Défaut       | Usage                                                                                                                                                         |
+| ------------------------ | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Zone de marché           | FR           | 40 zones (France, Belgique, Allemagne/Luxembourg, Italie, pays nordiques…). La changer crée un nouvel appareil ; supprimez l'ancien.                          |
+| TVA (%)                  | 0            | de 0 à 50                                                                                                                                                     |
+| Frais fixes              | 0 €/kWh      | de 0 à 1                                                                                                                                                      |
+| Fuseau horaire de Gladys | Europe/Paris | le fuseau de votre Gladys (Paramètres → Système), en nom IANA. Il fixe le début de la journée et les heures affichées. Un nom inconnu revient à Europe/Paris. |
+
+## Quand les prix sont lus
+
+- Au démarrage : aujourd'hui et demain (une requête).
+- Demain est demandé à partir de **13 h, heure de Bruxelles** (l'enchère se
+  clôt à midi), puis de nouveau après 10, 20, 30 puis toutes les 60 minutes
+  jusqu'à sa publication. La lecture suivante a lieu le lendemain à 13 h.
+- Entre deux lectures, les capteurs avancent chaque quart d'heure à partir
+  des prix en mémoire, **sans aucun appel réseau**. À minuit, demain devient
+  aujourd'hui.
+- Un redémarrage ou une reconnexion à Gladys garde les prix et ne relit pas
+  quand aujourd'hui et demain sont connus.
+
+## Erreurs
+
+| Situation                             | Ce qui se passe                                                                                                                                                                                                                              |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Jeton refusé (401)                    | les lectures **s'arrêtent** et l'état le signale ; les derniers prix restent affichés. Corrigez le jeton (ou attendez qu'ENTSO-E active votre accès à l'API), puis enregistrez la configuration ou appuyez sur **Lire les prix maintenant**. |
+| Trop de requêtes (429)                | toute lecture, bouton compris, attend le délai donné par ENTSO-E (d'une minute à six heures ; dix minutes sans délai donné).                                                                                                                 |
+| ENTSO-E en panne (5xx), erreur réseau | nouvel essai après 5, 15, 30 puis toutes les 60 minutes ; les derniers prix restent affichés.                                                                                                                                                |
+| Aucun prix pour la zone               | l'état le signale ; nouvel essai toutes les heures.                                                                                                                                                                                          |
+
+## Comment les données sont lues
+
+L'intégration demande le document A44 (prix du lendemain). Depuis le
+1er octobre 2025, le marché européen du lendemain fonctionne au **quart
+d'heure** ; les réponses en périodes de **60 minutes** sont lues aussi. Une
+période absente de la réponse reprend le prix précédent (la règle ENTSO-E
+des « blocs de taille variable »), et les journées de 23 et 25 heures des
+changements d'heure sont gérées. La réponse est lue par un analyseur borné
+et linéaire, et refusée au-delà de 256 Ko.
+
+## Limites
+
+- Une zone par installation de l'intégration.
+- Pas de déclencheur de scène, de widget ni de contrat d'énergie dans cette
+  version.
+- Prix en €/MWh uniquement : une zone qu'ENTSO-E coterait autrement est
+  signalée dans l'état (« pas cotée en EUR/MWh ») et redemandée toutes les
+  six heures.
+- Jamais testé avec un vrai jeton ENTSO-E (voir le haut de la page).
+
+La logique de lecture est reprise de
+[JaccoR/hass-entso-e](https://github.com/JaccoR/hass-entso-e) (Apache-2.0).
