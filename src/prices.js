@@ -151,9 +151,14 @@ export function marketDayEnd(t, offset = 0) {
  * the part of a local day that can be published at `t`: up to the end of
  * today's market day before 13:00 Brussels time, of tomorrow's after.
  * `baseComplete`: everything already published before today's auction is
- * known; `allComplete`: everything publishable now is known. Tomorrow's
- * stats cover its known part, and only after 13:00 (before, a timezone east
- * of Brussels would already see the first hour of its tomorrow).
+ * known; `allComplete`: everything publishable now is known (both drive the
+ * readings). "Tomorrow published" is judged on the market day holding the
+ * local tomorrow: from 13:00 Brussels time the day before that market day,
+ * on the part of the local tomorrow up to its end. Using the Brussels date
+ * of `t` instead would be wrong at both ends: from 00:00 to 01:00 in
+ * Helsinki it is still yesterday, after the auction, in Brussels (one known
+ * hour taken for tomorrow); from 23:00 in Lisbon it is already the next
+ * Brussels day, before its auction (tomorrow lost).
  */
 export function snapshot(rawSlots, t, { timezone, vatPercent = 0, feesPerKwh = 0 }) {
   const tariff = { vatPercent, feesPerKwh };
@@ -167,12 +172,19 @@ export function snapshot(rawSlots, t, { timezone, vatPercent = 0, feesPerKwh = 0
   const current = slots.find((s) => s.start <= t && t < s.end);
   const next = slots.find((s) => s.start >= (current ? current.end : t));
   const todayStats = stats(todaySlots);
-  const tomorrowEnd = Math.min(tomorrow.end, cap);
+  // The market day holding most of the local tomorrow (its middle): it is
+  // published at 13:00 Brussels time the day before, and tomorrow's known
+  // part ends with it.
+  const market = localDate(tomorrow.start + 12 * 3_600_000, MARKET_TIMEZONE);
   const tomorrowComplete =
-    auctionDone &&
-    tomorrowEnd > tomorrow.start &&
+    t >=
+      zonedTime(addDays(market, -1), MARKET_TIMEZONE, TOMORROW_FROM.hour, TOMORROW_FROM.minute) &&
     tomorrowSlots.length > 0 &&
-    coveredOn(slots, tomorrow.start, tomorrowEnd);
+    coveredOn(
+      slots,
+      tomorrow.start,
+      Math.min(tomorrow.end, zonedTime(addDays(market, 1), MARKET_TIMEZONE)),
+    );
   return {
     current,
     next,

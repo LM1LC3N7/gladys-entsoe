@@ -94,6 +94,26 @@ test('west of Brussels (Lisbon): complete on the publishable part of a local day
   assert.ok(missing.baseComplete && !missing.allComplete && !missing.tomorrowComplete);
 });
 
+test('east and west of Brussels around local midnight: tomorrow is its own market day', () => {
+  const market = (from, n) => quarters(from, n * 96, () => 50);
+  const d18 = Date.parse('2026-10-17T22:00:00Z'); // Brussels market day 18
+  // Helsinki, 00:30 on the 19th (21:30Z on the 18th, 23:30 in Brussels):
+  // its tomorrow (the 20th) is market day 20, not out before 13:00 on the 19th.
+  const helsinki = snapshot(market(d18, 2), Date.parse('2026-10-18T21:30:00Z'), {
+    timezone: 'Europe/Helsinki',
+  });
+  assert.equal(helsinki.tomorrowComplete, false);
+  assert.equal(helsinki.tomorrow, undefined);
+  // Lisbon, 23:30 on the 16th (22:30Z, already the 17th in Brussels): its
+  // tomorrow (the 17th) is market day 17, out since 13:00 on the 16th.
+  const d16 = Date.parse('2026-10-15T22:00:00Z');
+  const lisbon = snapshot(market(d16, 2), Date.parse('2026-10-16T22:30:00Z'), {
+    timezone: 'Europe/Lisbon',
+  });
+  assert.equal(lisbon.tomorrowComplete, true);
+  assert.equal(lisbon.tomorrow.min.start, Date.parse('2026-10-16T23:00:00Z'));
+});
+
 test('the autumn DST day has 100 quarter hours and ranks up to 99', () => {
   const start = zonedTime('2026-10-25', PARIS);
   const slots = quarters(start, 100, (i) => 1000 - i);

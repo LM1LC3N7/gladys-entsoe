@@ -316,6 +316,34 @@ test('an unexpected error is logged by its name only (its message may hold the U
   await app.stop();
 });
 
+test('Helsinki (east of Brussels): tomorrow_min is not rewritten from 00:00 to 14:00', async () => {
+  const { app, gladys, timers, clock } = setup({ now: AT_13 + H, auto: true });
+  await app.start({ ...CONFIG, timezone: 'Europe/Helsinki' });
+  // Tomorrow (the 17th in Helsinki) is out: its cheapest is position 11 of
+  // Brussels' 17, 00:30Z = 03:30 in Helsinki.
+  assert.equal(gladys.fake.lastState(f('tomorrow_cheapest_time')), '03:30');
+  const midnight = Date.parse('2026-10-16T21:00:00Z'); // 00:00 Helsinki on the 17th
+  while (clock.now < midnight) {
+    await timers.fire();
+  }
+  const before = gladys.fake.lastState(f('tomorrow_min'));
+  const from = gladys.fake.states.length;
+  const auction = Date.parse('2026-10-17T11:00:00Z'); // 14:00 Helsinki, 13:00 Brussels
+  while (timers.list()[0].at < auction) {
+    await timers.fire();
+  }
+  const written = gladys.fake.states
+    .slice(from)
+    .filter((s) => s.device_feature_external_id === f('tomorrow_min'))
+    .map((s) => s.state);
+  assert.ok(
+    written.every((value) => value === before),
+    JSON.stringify(written),
+  );
+  assert.equal(gladys.fake.lastState(f('tomorrow_cheapest_time')), '--:--');
+  await app.stop();
+});
+
 test('after a 401, saving the configuration with the same token asks once; a reconnection does not', async () => {
   const { app, gladys, market } = setup();
   market.answer = () => status(401);

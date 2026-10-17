@@ -62,9 +62,15 @@
   fix): up to the end of today's Brussels market day before 13:00, of
   tomorrow's after. A local day west of Brussels (Lisbon, London, Canaries)
   straddles two market days: judged on whole days, it was never complete
-  and read every hour (31 requests in 48 h instead of 3). Tomorrow counts
-  only after 13:00 Brussels time (east of Brussels, the first hour of the
-  local tomorrow is known before), and its stats cover its known part.
+  and read every hour (31 requests in 48 h instead of 3). These rules drive
+  the readings (`baseComplete`, `allComplete`).
+- **"Tomorrow published" is judged on the market day holding the local
+  tomorrow** (approval fix): the Brussels date of its middle, published
+  from 13:00 Brussels time the day before; tomorrow's stats cover the local
+  tomorrow up to the end of that market day. Judged on the Brussels date of
+  now, Helsinki (EET zones: FI, EE, LV, LT, RO, BG, GR) took one known hour
+  for tomorrow from 00:00 to 01:00 (tomorrow_min overwritten until 14:00),
+  and Lisbon, London or the Canaries lost tomorrow from 23:00.
 - **Curve type** (review fix): the "repeat the previous price" rule applies
   to curve A03 only; in A01 or without a curve type a missing position has
   no slot; any other curve type skips its series. A position outside its
