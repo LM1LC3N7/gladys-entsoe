@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-17
+
 ### Added
 
 - One device for the chosen European bidding zone (40 zones, France by
@@ -34,4 +36,5 @@ the notes of the version's GitHub Release.
 - `THIRD_PARTY_NOTICES.md` crediting JaccoR/hass-entso-e (Apache-2.0),
   shipped in the image with `LICENSE`.
 
-[Unreleased]: https://github.com/LM1LC3N7/gladys-entsoe/commits/main
+[Unreleased]: https://github.com/LM1LC3N7/gladys-entsoe/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/LM1LC3N7/gladys-entsoe/releases/tag/v0.1.1

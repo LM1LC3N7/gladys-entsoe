@@ -1,6 +1,6 @@
 {
   "name": "gladys-entsoe",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "ENTSO-E Transparency Platform day-ahead electricity prices for Gladys Assistant: current, next, daily minimum, maximum and average price per kWh, cheapest period of today and tomorrow, rank of the current period.",
   "type": "module",
