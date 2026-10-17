@@ -323,10 +323,11 @@ test('Helsinki (east of Brussels): tomorrow_min is not rewritten from 00:00 to 1
   // Brussels' 17, 00:30Z = 03:30 in Helsinki.
   assert.equal(gladys.fake.lastState(f('tomorrow_cheapest_time')), '03:30');
   const midnight = Date.parse('2026-10-16T21:00:00Z'); // 00:00 Helsinki on the 17th
-  while (clock.now < midnight) {
+  while (timers.list()[0].at < midnight) {
     await timers.fire();
   }
   const before = gladys.fake.lastState(f('tomorrow_min'));
+  assert.equal(before, -0.005);
   const from = gladys.fake.states.length;
   const auction = Date.parse('2026-10-17T11:00:00Z'); // 14:00 Helsinki, 13:00 Brussels
   while (timers.list()[0].at < auction) {
