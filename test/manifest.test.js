@@ -10,7 +10,8 @@ import { createFakeGladys } from '@gladysassistant/integration-sdk/testing';
 import { ACTION_TEST } from '../src/app.js';
 import { DEFAULTS, LIMITS } from '../src/config.js';
 import { ZONES } from '../src/constants.js';
-import { buildDevice } from '../src/devices.js';
+import { FEATURE, buildDevice } from '../src/devices.js';
+import { assertCoreDevice } from './helpers/coreFeature.js';
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const manifest = JSON.parse(read('gladys-assistant-integration.json'));
@@ -121,4 +122,13 @@ test('the licenses ship with the image', () => {
   assert.match(read('LICENSE'), /Apache License\s+Version 2\.0/);
   assert.match(read('THIRD_PARTY_NOTICES.md'), /JaccoR\/hass-entso-e/);
   assert.equal(pkg.license, 'Apache-2.0');
+});
+
+test('every feature has a numeric min and max and the other core fields', () => {
+  const gladys = createFakeGladys({ selector: 'entsoe' });
+  let features = 0;
+  for (const zone of ['FR', Object.keys(ZONES).at(-1)]) {
+    features += assertCoreDevice(buildDevice(gladys, zone), zone);
+  }
+  assert.equal(features, 2 * Object.keys(FEATURE).length);
 });

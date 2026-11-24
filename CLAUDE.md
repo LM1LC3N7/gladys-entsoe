@@ -8,7 +8,8 @@ contributors.
 A Gladys Assistant **external integration**: a Node.js service (Node 22+, ESM,
 no build step) that runs in its own sandboxed Docker container and talks to
 Gladys through
-[`@gladysassistant/integration-sdk`](https://github.com/GladysAssistant/integration-sdk-js),
+[`@gladysassistant/integration-sdk`](https://github.com/GladysAssistant/integration-sdk-js)
+(v0.16),
 its only runtime dependency. It started from the official JavaScript template.
 
 It reads the **day-ahead prices (document A44) of the ENTSO-E Transparency
@@ -22,7 +23,7 @@ JaccoR/hass-entso-e (Apache-2.0, see THIRD_PARTY_NOTICES.md).
 
 ```bash
 npm install
-npm test                                  # node --test, the built-in runner
+npm test                                  # node --test --test-timeout=60000
 node --test test/entsoe.test.js           # one file
 node --test --test-name-pattern "429"     # tests whose name matches
 npm run audit                             # npm audit --omit=dev
@@ -58,6 +59,12 @@ test/                             node --test, against the SDK's fake Gladys (in
 
 ## Rules
 
+- **Features follow the core model.** Every feature has a non-empty `name`, a
+  numeric `min` and `max` (0/0 for text), boolean `read_only` and
+  `has_feedback`: Gladys refuses it otherwise, and the SDK's fake Gladys
+  (0.16.1) too; `test/helpers/coreFeature.js` checks every device kind.
+  Devices carry `should_poll: false` (Gladys 5.3 polls a device with
+  `poll_frequency` unless it says so).
 - **The token is in the URL.** Never log a URL, a query or an answer body;
   error messages are built from fixed strings and status codes only
   (`src/http.js`). The token goes to `web-api.tp.entsoe.eu` only.
