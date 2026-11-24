@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-11-24
+
 ### Changed
 
 - Integration SDK 0.16.1 (no change for the devices); the test runner stops a
@@ -49,7 +51,8 @@ the notes of the version's GitHub Release.
 - `THIRD_PARTY_NOTICES.md` crediting JaccoR/hass-entso-e (Apache-2.0),
   shipped in the image with `LICENSE`.
 
-[Unreleased]: https://github.com/LM1LC3N7/gladys-entsoe/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/LM1LC3N7/gladys-entsoe/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/LM1LC3N7/gladys-entsoe/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/LM1LC3N7/gladys-entsoe/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/LM1LC3N7/gladys-entsoe/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/LM1LC3N7/gladys-entsoe/releases/tag/v0.1.1
