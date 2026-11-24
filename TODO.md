@@ -147,3 +147,7 @@
   name the zone.
 - Other A44-like documents: day-ahead total load forecast (A65), wind and
   solar forecast (A69), for "green hours".
+
+## Next patch
+
+- Migration review minors: see `_lots/migration-reviews/w13-gladys-entsoe-r1.md`.
